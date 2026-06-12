@@ -193,6 +193,7 @@ else
     private readonly Step[] _steps =
     {
         new("Scheduled",            "Workflow scheduled, aircraft actor created.",        "calendar-plus"),
+        new("Waiting for gate",     "Acquiring the Dapr distributed lock for this gate.",  "lock"),
         new("Boarding & pushback",  "Boarding passengers, pushing back from the gate.",   "users"),
         new("Awaiting takeoff",     "Requesting takeoff clearance from ATC.",             "radio"),
         new("Departed",             "Cleared, taxiing and rolling for takeoff.",          "plane-takeoff"),
@@ -251,24 +252,27 @@ else
     private static int StepIndexFor(FlightStatus status) => status switch
     {
         FlightStatus.Scheduled                => 0,
-        FlightStatus.BoardingPushback         => 1,
-        FlightStatus.AwaitingTakeoffClearance => 2,
-        FlightStatus.Departed                 => 3,
-        FlightStatus.Cruising                 => 4,
-        FlightStatus.AwaitingLandingClearance => 5,
-        FlightStatus.Landed                   => 6,
-        FlightStatus.Cancelled                => 1, // freeze the marker wherever we cancelled
+        FlightStatus.WaitingForGate           => 1,
+        FlightStatus.BoardingPushback         => 2,
+        FlightStatus.AwaitingTakeoffClearance => 3,
+        FlightStatus.Departed                 => 4,
+        FlightStatus.Cruising                 => 5,
+        FlightStatus.AwaitingLandingClearance => 6,
+        FlightStatus.Landed                   => 7,
+        FlightStatus.Cancelled                => 2, // freeze the marker wherever we cancelled
         _ => 0,
     };
 
     private static bool CanAdvance(FlightStatus s) => s
-        is FlightStatus.BoardingPushback
+        is FlightStatus.WaitingForGate
+        or FlightStatus.BoardingPushback
         or FlightStatus.Departed
         or FlightStatus.Cruising;
 
     private static string StatusClass(FlightStatus s) => s switch
     {
         FlightStatus.Scheduled                  => "status-scheduled",
+        FlightStatus.WaitingForGate             => "status-waitgate",
         FlightStatus.BoardingPushback           => "status-boarding",
         FlightStatus.AwaitingTakeoffClearance   => "status-cleared",
         FlightStatus.Departed                   => "status-departed",
@@ -281,6 +285,7 @@ else
 
     private static string StatusLabel(FlightStatus s) => s switch
     {
+        FlightStatus.WaitingForGate             => "WAIT GATE",
         FlightStatus.BoardingPushback           => "BOARDING",
         FlightStatus.AwaitingTakeoffClearance   => "AWAIT T/O",
         FlightStatus.AwaitingLandingClearance   => "AWAIT LDG",

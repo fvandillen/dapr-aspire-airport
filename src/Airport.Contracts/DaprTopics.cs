@@ -12,6 +12,9 @@ public static class DaprTopics
     /// <summary>Name of the Dapr state store component (matches <c>dapr/components/statestore.yaml</c>).</summary>
     public const string StateStoreName = "statestore";
 
+    /// <summary>Name of the Dapr distributed-lock component (matches <c>dapr/components/lockstore.yaml</c>).</summary>
+    public const string LockStoreName = "lockstore";
+
     /// <summary>Weather snapshots published periodically by the WeatherService.</summary>
     public const string WeatherUpdates = "weather-updates";
 

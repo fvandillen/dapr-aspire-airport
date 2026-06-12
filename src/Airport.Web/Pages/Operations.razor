@@ -42,10 +42,15 @@
                         <BbInput Id="gate" @bind-Value="_gate" Placeholder="D12" />
                     </div>
                 </div>
-                <BbButton Variant="ButtonVariant.Default" OnClick="ScheduleAsync" Disabled="@_busy">
-                    <LucideIcon Name="plane-takeoff" Size="14" />
-                    @(_busy ? "Scheduling..." : "Schedule flight")
-                </BbButton>
+                <div style="display:flex; gap:0.5rem;">
+                    <BbButton Variant="ButtonVariant.Default" OnClick="ScheduleAsync" Disabled="@_busy">
+                        <LucideIcon Name="plane-takeoff" Size="14" />
+                        @(_busy ? "Scheduling..." : "Schedule flight")
+                    </BbButton>
+                    <BbButton Variant="ButtonVariant.Outline" OnClick="Randomize" Disabled="@_busy" Type="ButtonType.Button">
+                        <LucideIcon Name="dices" Size="14" /> Randomize
+                    </BbButton>
+                </div>
                 @if (_lastError is not null)
                 {
                     <div style="border:1px solid var(--destructive); background:color-mix(in oklab, var(--destructive) 12%, transparent); border-radius:var(--radius); padding:0.75rem 1rem;">
@@ -94,15 +99,29 @@
 }
 
 @code {
-    private string _callsign = "KL1611";
-    private string _origin = "AMS";
-    private string _destination = "BCN";
-    private string _aircraft = "Boeing 737-800";
-    private string _gate = "D12";
+    private string _callsign = "";
+    private string _origin = FlightFaker.HomeAirport;
+    private string _destination = "";
+    private string _aircraft = "";
+    private string _gate = "";
+    private DateTimeOffset _scheduledDeparture = DateTimeOffset.UtcNow.AddMinutes(5);
 
     private bool _busy;
     private string? _lastError;
     private FlightView? _lastScheduled;
+
+    protected override void OnInitialized() => Randomize();
+
+    private void Randomize()
+    {
+        var sample = FlightFaker.NewRandom(DateTimeOffset.UtcNow);
+        _callsign = sample.Callsign;
+        _origin = sample.Origin;
+        _destination = sample.Destination;
+        _aircraft = sample.AircraftType;
+        _gate = sample.Gate;
+        _scheduledDeparture = sample.ScheduledDeparture;
+    }
 
     private async Task ScheduleAsync()
     {
@@ -112,8 +131,10 @@
         {
             var view = await Flights.ScheduleAsync(new ScheduleFlightRequest(
                 _callsign, _origin, _destination, _aircraft, _gate,
-                DateTimeOffset.UtcNow.AddMinutes(5)));
+                _scheduledDeparture));
             _lastScheduled = view;
+            // Pre-fill with a fresh random flight so back-to-back clicks aren't identical.
+            Randomize();
         }
         catch (Exception ex)
         {

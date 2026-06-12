@@ -67,3 +67,73 @@ public sealed class CheckWeatherActivity(ILogger<CheckWeatherActivity> logger)
         return snapshot;
     }
 }
+
+/// <summary>Input for the gate-lock activities. The workflow id is the lock owner so the
+/// lock automatically releases if the workflow is terminated.</summary>
+public sealed record GateLockInput(string FlightId, string Gate);
+
+/// <summary>
+/// Tries once to acquire the Dapr distributed lock for the given gate. Returns true on success,
+/// false if some other flight currently holds it. The workflow loops on this until it succeeds.
+/// </summary>
+/// <remarks>
+/// Uses the alpha Dapr distributed-lock API. The lock owner is the flight id (== workflow id),
+/// and the expiry acts as a safety net in case the workflow crashes without releasing.
+/// </remarks>
+public sealed class TryAcquireGateActivity(DaprClient dapr, ILogger<TryAcquireGateActivity> logger)
+    : WorkflowActivity<GateLockInput, bool>
+{
+    // The distributed-lock API is still flagged Experimental in the Dapr .NET SDK.
+#pragma warning disable DAPR_DISTRIBUTEDLOCK
+    public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
+    {
+        var resourceId = $"gate:{input.Gate}";
+        // 5 minutes is generous enough for boarding + pushback + a buffer; the workflow
+        // unlocks explicitly the moment it transitions to Departed.
+        var response = await dapr.Lock(
+            storeName: DaprTopics.LockStoreName,
+            resourceId: resourceId,
+            lockOwner: input.FlightId,
+            expiryInSeconds: 300);
+
+        if (response.Success)
+        {
+            logger.LogInformation("Acquired gate lock {Gate} for flight {FlightId}",
+                input.Gate, input.FlightId);
+        }
+        else
+        {
+            logger.LogDebug("Gate {Gate} busy; flight {FlightId} waiting", input.Gate, input.FlightId);
+        }
+        return response.Success;
+    }
+#pragma warning restore DAPR_DISTRIBUTEDLOCK
+}
+
+/// <summary>Releases the gate lock held by the flight. Safe to call even if no lock is held.</summary>
+public sealed class ReleaseGateActivity(DaprClient dapr, ILogger<ReleaseGateActivity> logger)
+    : WorkflowActivity<GateLockInput, bool>
+{
+#pragma warning disable DAPR_DISTRIBUTEDLOCK
+    public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
+    {
+        var resourceId = $"gate:{input.Gate}";
+        try
+        {
+            var response = await dapr.Unlock(
+                storeName: DaprTopics.LockStoreName,
+                resourceId: resourceId,
+                lockOwner: input.FlightId);
+            logger.LogInformation("Released gate lock {Gate} for flight {FlightId}",
+                input.Gate, input.FlightId);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: the lock will expire on its own.
+            logger.LogWarning(ex, "Failed to release gate lock {Gate} for flight {FlightId}",
+                input.Gate, input.FlightId);
+        }
+        return true;
+    }
+#pragma warning restore DAPR_DISTRIBUTEDLOCK
+}

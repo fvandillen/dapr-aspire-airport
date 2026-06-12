@@ -223,6 +223,7 @@ a {
 }
 
 .badge.status-scheduled  { background: #4b5563; color: #f9fafb; }
+.badge.status-waitgate   { background: #b45309; color: #fffbeb; }
 .badge.status-boarding   { background: #2563eb; color: #f9fafb; }
 .badge.status-cleared    { background: #16a34a; color: #f9fafb; }
 .badge.status-departed   { background: #0ea5e9; color: #ffffff; }

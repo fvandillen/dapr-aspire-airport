@@ -31,6 +31,8 @@ builder.Services.AddDaprWorkflow(options =>
     options.RegisterActivity<UpdateAircraftStatusActivity>();
     options.RegisterActivity<RequestClearanceActivity>();
     options.RegisterActivity<CheckWeatherActivity>();
+    options.RegisterActivity<TryAcquireGateActivity>();
+    options.RegisterActivity<ReleaseGateActivity>();
 });
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -128,15 +130,9 @@ flights.MapPost("/seed", async (
     DaprWorkflowClient workflows,
     ILogger<Program> logger) =>
 {
-    var samples = new[]
-    {
-        new ScheduleFlightRequest("KL1611", "AMS", "BCN", "Boeing 737-800", "D12", DateTimeOffset.UtcNow.AddMinutes(5)),
-        new ScheduleFlightRequest("BA438",  "AMS", "LHR", "Airbus A320",    "C7",  DateTimeOffset.UtcNow.AddMinutes(8)),
-        new ScheduleFlightRequest("LH992",  "AMS", "FRA", "Airbus A321neo", "E22", DateTimeOffset.UtcNow.AddMinutes(12)),
-        new ScheduleFlightRequest("AF1241", "AMS", "CDG", "Boeing 777-300", "F4",  DateTimeOffset.UtcNow.AddMinutes(15)),
-    };
+    var samples = FlightFaker.NewRandomBatch(count: 4, now: DateTimeOffset.UtcNow);
 
-    var scheduled = new List<FlightView>(samples.Length);
+    var scheduled = new List<FlightView>(samples.Count);
     foreach (var s in samples)
     {
         scheduled.Add(await FlightOps.ScheduleFlight(s, dapr, workflows, logger));
@@ -161,15 +157,21 @@ flights.MapPost("/{flightId}/advance", async (
 });
 
 // Terminate the workflow and mark the aircraft as Cancelled so the UI updates immediately.
+// Also releases the gate lock so the next flight assigned to that gate can board.
 flights.MapPost("/{flightId}/cancel", async (
     string flightId,
+    DaprClient dapr,
     DaprWorkflowClient workflows,
     ILogger<Program> logger) =>
 {
     logger.LogInformation("Operator cancel requested for {FlightId}", flightId);
+
+    string? gate = null;
     try
     {
         var actor = AircraftActorProxy.For(flightId);
+        var state = await actor.GetStateAsync();
+        gate = state.Gate;
         await actor.UpdateStatusAsync(new StatusUpdate(
             FlightStatus.Cancelled, Note: "Cancelled by operator"));
     }
@@ -179,6 +181,24 @@ flights.MapPost("/{flightId}/cancel", async (
     }
 
     await workflows.TerminateWorkflowAsync(flightId, output: "cancelled by operator");
+
+    if (!string.IsNullOrEmpty(gate))
+    {
+#pragma warning disable DAPR_DISTRIBUTEDLOCK
+        try
+        {
+            await dapr.Unlock(
+                storeName: DaprTopics.LockStoreName,
+                resourceId: $"gate:{gate}",
+                lockOwner: flightId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Gate {Gate} was not held by flight {FlightId} at cancel time", gate, flightId);
+        }
+#pragma warning restore DAPR_DISTRIBUTEDLOCK
+    }
+
     return Results.Ok();
 });
 

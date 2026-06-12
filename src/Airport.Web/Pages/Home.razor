@@ -139,6 +139,7 @@
     private static string StatusClass(FlightStatus s) => s switch
     {
         FlightStatus.Scheduled                  => "status-scheduled",
+        FlightStatus.WaitingForGate             => "status-waitgate",
         FlightStatus.BoardingPushback           => "status-boarding",
         FlightStatus.AwaitingTakeoffClearance   => "status-cleared",
         FlightStatus.Departed                   => "status-departed",
@@ -151,6 +152,7 @@
 
     private static string StatusLabel(FlightStatus s) => s switch
     {
+        FlightStatus.WaitingForGate             => "WAIT GATE",
         FlightStatus.BoardingPushback           => "BOARDING",
         FlightStatus.AwaitingTakeoffClearance   => "AWAIT T/O",
         FlightStatus.AwaitingLandingClearance   => "AWAIT LDG",

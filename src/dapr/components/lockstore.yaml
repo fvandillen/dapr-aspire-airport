@@ -1,0 +1,15 @@
+# Dapr distributed lock store, backed by Redis that `dapr init` provisions on
+# localhost:6379. Used to ensure that only one flight can occupy a given gate
+# at a time (boarding + pushback).
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: lockstore
+spec:
+  type: lock.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: "localhost:6379"
+    - name: redisPassword
+      value: ""

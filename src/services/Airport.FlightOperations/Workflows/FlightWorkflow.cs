@@ -40,7 +40,29 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
                 input.AircraftType, input.Gate,
                 context.CurrentUtcDateTime));
 
-        await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.BoardingPushback));
+        // --- 1b. Acquire the gate (Dapr distributed lock) -----------------
+        // Loops until the lock is granted so two flights can't board the same gate
+        // simultaneously. The lock owner is the workflow id, so cancelling the workflow
+        // (or letting it crash) eventually frees the gate via the lock TTL.
+        var gateLockInput = new GateLockInput(input.FlightId, input.Gate);
+        var gateAcquired = await context.CallActivityAsync<bool>(
+            nameof(TryAcquireGateActivity), gateLockInput);
+
+        var waitCount = 0;
+        while (!gateAcquired)
+        {
+            await SetStatus(context, input.FlightId, new StatusUpdate(
+                FlightStatus.WaitingForGate,
+                Note: $"Waiting for gate {input.Gate} (attempt {waitCount + 1})"));
+            await WaitOrAdvance(context, TimeSpan.FromSeconds(15));
+            gateAcquired = await context.CallActivityAsync<bool>(
+                nameof(TryAcquireGateActivity), gateLockInput);
+            waitCount++;
+        }
+
+        await SetStatus(context, input.FlightId, new StatusUpdate(
+            FlightStatus.BoardingPushback,
+            Note: waitCount > 0 ? $"Gate {input.Gate} acquired after {waitCount} retries" : null));
         await WaitOrAdvance(context, TimeSpan.FromSeconds(60));
 
         // --- 2. Weather check, with a retry loop --------------------------
@@ -54,6 +76,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
             if (attempt >= 4)
             {
+                await ReleaseGate(context, gateLockInput);
                 await SetStatus(context, input.FlightId, new StatusUpdate(
                     FlightStatus.Cancelled, Note: $"Cancelled: persistent bad weather ({weather.Condition})"));
                 return new FlightWorkflowResult(false, "Cancelled: weather");
@@ -72,6 +95,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
         if (takeoff is null)
         {
+            await ReleaseGate(context, gateLockInput);
             await SetStatus(context, input.FlightId, new StatusUpdate(
                 FlightStatus.Cancelled, Note: "Takeoff clearance denied repeatedly"));
             return new FlightWorkflowResult(false, "Cancelled: no takeoff clearance");
@@ -81,6 +105,10 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             FlightStatus.Departed,
             Runway: takeoff.Runway,
             ActualDeparture: context.CurrentUtcDateTime));
+
+        // Gate is free the moment the aircraft has departed — release it so the next
+        // flight assigned to this gate can start boarding.
+        await ReleaseGate(context, gateLockInput);
 
         // --- 4. Cruise (compressed for demo) ------------------------------
         await WaitOrAdvance(context, TimeSpan.FromSeconds(80));
@@ -112,6 +140,9 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         context.CallActivityAsync<bool>(
             nameof(UpdateAircraftStatusActivity),
             new UpdateAircraftStatusActivity.Input(flightId, update));
+
+    private static Task ReleaseGate(WorkflowContext context, GateLockInput input) =>
+        context.CallActivityAsync<bool>(nameof(ReleaseGateActivity), input);
 
     /// <summary>
     /// Waits up to <paramref name="timeout"/>, but returns immediately if the workflow

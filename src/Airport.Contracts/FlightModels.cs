@@ -4,6 +4,7 @@ namespace Airport.Contracts;
 public enum FlightStatus
 {
     Scheduled,
+    WaitingForGate,
     BoardingPushback,
     AwaitingTakeoffClearance,
     Departed,
