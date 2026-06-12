@@ -1,0 +1,41 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 4 — Observability
+version: 3
+description: >-
+  Why correlated telemetry is non-negotiable in distributed systems, how
+  OpenTelemetry is wired by Aspire's ServiceDefaults, and how to add custom
+  metrics with Meter / IMeterFactory.
+timer: 6
+scenes:
+
+  - id: observability-why
+    title: Observability is non-negotiable
+    description: Why distributed apps need correlated telemetry.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 13
+
+  - id: otel-in-aspire
+    title: OpenTelemetry in Aspire
+    description: How ServiceDefaults wires OTel end-to-end through sidecars.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 14
+
+  - id: custom-metrics
+    title: Custom metrics with Meter
+    description: >-
+      Slide on Meter / IMeterFactory, then open AirportTelemetry.cs and
+      highlight the ATC clearance counter + histogram pair.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 15
+      - action: open
+        path: src/Airport.Contracts/AirportTelemetry.cs
+      - action: highlight
+        path: src/Airport.Contracts/AirportTelemetry.cs
+        startPlaceholder: public static readonly Counter<long> ClearanceDecisions =
+        endPlaceholder: 'description: "Wall-clock time spent deciding on a clearance request.");'

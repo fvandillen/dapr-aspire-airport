@@ -1,0 +1,68 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 3 — Aspire
+version: 3
+description: >-
+  Aspire as a DX + composition toolkit: AppHost, ServiceDefaults, hosting vs
+  client integrations, and the Dapr integration that makes sidecars first-class
+  AppHost resources.
+timer: 10
+scenes:
+
+  - id: aspire-what
+    title: What is .NET Aspire?
+    description: Aspire as a DX + composition toolkit.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 8
+
+  - id: aspire-apphost
+    title: The AppHost
+    description: AppHost concept slide.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 9
+
+  - id: aspire-service-defaults
+    title: ServiceDefaults — OTel out of the box
+    description: >-
+      Slide first, then open the real Extensions.cs and highlight the OTel
+      registration block that every service inherits via AddServiceDefaults().
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 10
+      - action: open
+        path: src/Airport.ServiceDefaults/Extensions.cs
+      - action: highlight
+        path: src/Airport.ServiceDefaults/Extensions.cs
+        position: "55:78"
+
+  - id: aspire-integrations
+    title: Hosting vs client integrations
+    description: How Aspire integrations split into hosting and client packages.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 11
+
+  - id: aspire-dapr-together
+    title: Aspire + Dapr in our AppHost
+    description: >-
+      Slide first; then open the real AppHost.cs and highlight the SidecarFor
+      helper followed by the WithDaprSidecar wiring for all three services.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 12
+      - action: open
+        path: src/Airport.AppHost/AppHost.cs
+      - action: highlight
+        path: src/Airport.AppHost/AppHost.cs
+        startPlaceholder: DaprSidecarOptions SidecarFor(string appId) => new()
+        endPlaceholder: LogLevel = "info",
+      - action: highlight
+        path: src/Airport.AppHost/AppHost.cs
+        startPlaceholder: "// --- Backend services (each with its own Dapr sidecar) -----------------------"
+        endPlaceholder: .WithDaprSidecar(SidecarFor("flight-ops"));

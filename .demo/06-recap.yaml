@@ -1,0 +1,14 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 6 — Recap and Q&A
+version: 3
+description: Summarize key takeaways and open the floor for questions.
+timer: 3
+scenes:
+
+  - id: recap
+    title: Recap and Q&A
+    description: Summarize key takeaways and open the floor.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 20

@@ -1,0 +1,85 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 5 — Building blocks in the demo app
+version: 3
+description: >-
+  Walk through the Dapr building blocks exercised by the airport demo: pub/sub
+  weather updates, state-managed active clearances, service-to-service
+  invocation from the workflow, plus the bonus workflows + actors slide.
+timer: 12
+scenes:
+
+  - id: pubsub-demo
+    title: Pub/Sub with Dapr — weather → ATC
+    description: >-
+      Slide, then publisher (WeatherService) and subscriber (AtcService) code.
+      Drive the live demo manually in the running app.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 16
+      - action: open
+        path: src/services/Airport.WeatherService/Program.cs
+      - action: highlight
+        path: src/services/Airport.WeatherService/Program.cs
+        startPlaceholder: static async Task PublishCurrent(DaprClient dapr, WeatherState state)
+        endPlaceholder: "// Best-effort: the periodic loop will retry."
+      - action: open
+        path: src/services/Airport.AtcService/Program.cs
+      - action: highlight
+        path: src/services/Airport.AtcService/Program.cs
+        startPlaceholder: app.MapPost("/atc/weather-updates",
+        endPlaceholder: .WithTopic(DaprTopics.PubSubName, DaprTopics.WeatherUpdates);
+
+  - id: state-demo
+    title: State management with Dapr — active clearances
+    description: >-
+      Slide, then highlight the AtcService clearance handler reading + writing
+      the active-clearances map. Drive the live demo manually in the running app.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 17
+      - action: open
+        path: src/services/Airport.AtcService/Program.cs
+      - action: highlight
+        path: src/services/Airport.AtcService/Program.cs
+        startPlaceholder: var map = await dapr.GetStateAsync<Dictionary<string, ActiveClearance>>(
+        endPlaceholder: await dapr.SaveStateAsync(DaprTopics.StateStoreName, ActiveClearancesKey, map);
+
+  - id: invocation-demo
+    title: Service invocation — workflow calls weather
+    description: >-
+      Slide, then highlight CheckWeatherActivity using
+      DaprClient.CreateInvokeHttpClient to talk to the weather sidecar by app id.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 18
+      - action: open
+        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+        startPlaceholder: "// Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar."
+        endPlaceholder: '?? throw new InvalidOperationException("WeatherService returned no snapshot");'
+
+  - id: workflows-bonus
+    title: Bonus — Dapr Workflows + Actors
+    description: >-
+      Slide, then the FlightWorkflow takeoff section and the Aircraft actor's
+      UpdateStatusAsync. Drive the live demo (schedule a flight) manually.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 19
+      - action: open
+        path: src/services/Airport.FlightOperations/Workflows/FlightWorkflow.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Workflows/FlightWorkflow.cs
+        startPlaceholder: "// --- 3. Takeoff clearance request/wait loop -----------------------"
+        endPlaceholder: "ActualDeparture: context.CurrentUtcDateTime));"
+      - action: open
+        path: src/services/Airport.FlightOperations/Aircraft/AircraftActor.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Aircraft/AircraftActor.cs
+        startPlaceholder: public async Task UpdateStatusAsync(StatusUpdate update)
+        endPlaceholder: next.Callsign, next.Status, next.Runway ?? "-");

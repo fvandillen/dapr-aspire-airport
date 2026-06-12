@@ -1,0 +1,40 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 1 — Intro
+version: 3
+description: >-
+  Set the stage: title, agenda, why distributed systems hurt, and the airport
+  demo app we'll dissect for the rest of the talk.
+timer: 8
+scenes:
+
+  - id: title
+    title: Title
+    description: Open title slide.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 1
+
+  - id: agenda
+    title: Agenda
+    description: Set expectations for the talk.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 2
+
+  - id: distributed-is-hard
+    title: Distributed systems are hard
+    description: Frame the problem.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 3
+
+  - id: meet-the-airport
+    title: Meet the airport
+    description: Introduce the demo app via the topology diagram.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 4

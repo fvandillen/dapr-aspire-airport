@@ -1,0 +1,32 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: 2 — Dapr
+version: 3
+description: >-
+  One-slide intro to Dapr, the sidecar pattern, and the catalogue of building
+  blocks + components that the rest of the talk builds on.
+timer: 6
+scenes:
+
+  - id: dapr-what
+    title: What is Dapr?
+    description: One-slide intro to Dapr.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 5
+
+  - id: dapr-sidecar
+    title: The sidecar pattern
+    description: Diagram of the sidecar model.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 6
+
+  - id: dapr-building-blocks
+    title: Building blocks & components
+    description: Table of Dapr building blocks and components.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 7
