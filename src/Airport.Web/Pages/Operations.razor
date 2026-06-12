@@ -77,18 +77,20 @@
 
 @if (_lastScheduled is not null)
 {
-    <BbCard style="margin-top:1rem;">
-        <BbCardHeader>
-            <BbCardTitle>Last scheduled flight</BbCardTitle>
-            <BbCardDescription>Flight id <code>@_lastScheduled.FlightId</code></BbCardDescription>
-        </BbCardHeader>
-        <BbCardContent>
-            <div class="muted">
-                @_lastScheduled.Callsign · @_lastScheduled.Origin → @_lastScheduled.Destination ·
-                @_lastScheduled.AircraftType · gate @_lastScheduled.Gate
-            </div>
-        </BbCardContent>
-    </BbCard>
+    <div style="margin-top:1rem;">
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Last scheduled flight</BbCardTitle>
+                <BbCardDescription>Flight id <code>@_lastScheduled.FlightId</code></BbCardDescription>
+            </BbCardHeader>
+            <BbCardContent>
+                <div class="muted">
+                    @_lastScheduled.Callsign · @_lastScheduled.Origin → @_lastScheduled.Destination ·
+                    @_lastScheduled.AircraftType · gate @_lastScheduled.Gate
+                </div>
+            </BbCardContent>
+        </BbCard>
+    </div>
 }
 
 @code {

@@ -59,23 +59,25 @@
 
 @if (_lastWeather is not null)
 {
-    <BbCard style="margin-top:1rem;">
-        <BbCardHeader>
-            <BbCardTitle>Last weather observed by ATC</BbCardTitle>
-            <BbCardDescription>
-                ATC subscribes to the same <code>weather-updates</code> topic the WeatherService publishes to.
-            </BbCardDescription>
-        </BbCardHeader>
-        <BbCardContent>
-            <div class="muted">
-                @_lastWeather.Condition · wind @_lastWeather.WindKnots kt · vis @_lastWeather.VisibilityMeters m
-                @if (!_lastWeather.IsFlyable)
-                {
-                    <BbBadge Variant="BadgeVariant.Destructive" Class="ml-2">below minima</BbBadge>
-                }
-            </div>
-        </BbCardContent>
-    </BbCard>
+    <div style="margin-top:1rem;">
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Last weather observed by ATC</BbCardTitle>
+                <BbCardDescription>
+                    ATC subscribes to the same <code>weather-updates</code> topic the WeatherService publishes to.
+                </BbCardDescription>
+            </BbCardHeader>
+            <BbCardContent>
+                <div class="muted">
+                    @_lastWeather.Condition · wind @_lastWeather.WindKnots kt · vis @_lastWeather.VisibilityMeters m
+                    @if (!_lastWeather.IsFlyable)
+                    {
+                        <BbBadge Variant="BadgeVariant.Destructive" Class="ml-2">below minima</BbBadge>
+                    }
+                </div>
+            </BbCardContent>
+        </BbCard>
+    </div>
 }
 
 @code {
