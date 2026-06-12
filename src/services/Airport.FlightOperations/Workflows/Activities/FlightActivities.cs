@@ -14,6 +14,11 @@ public sealed class InitializeAircraftActivity(ILogger<InitializeAircraftActivit
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, AircraftInitData data)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.initialize_aircraft");
+        span?.SetTag("flight.id", data.FlightId);
+        span?.SetTag("flight.callsign", data.Callsign);
+        span?.SetTag("flight.gate", data.Gate);
+
         var actor = AircraftActorProxy.For(data.FlightId);
         await actor.InitializeAsync(data);
         logger.LogInformation("Initialized aircraft actor for flight {FlightId}", data.FlightId);
@@ -29,6 +34,12 @@ public sealed class UpdateAircraftStatusActivity(ILogger<UpdateAircraftStatusAct
 
     public override async Task<bool> RunAsync(WorkflowActivityContext context, Input input)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.update_status");
+        span?.SetTag("flight.id", input.FlightId);
+        span?.SetTag("flight.status", input.Update.Status.ToString());
+        if (input.Update.Runway is not null) span?.SetTag("flight.runway", input.Update.Runway);
+        if (input.Update.Note is not null) span?.SetTag("flight.note", input.Update.Note);
+
         var actor = AircraftActorProxy.For(input.FlightId);
         await actor.UpdateStatusAsync(input.Update);
         logger.LogDebug("Flight {FlightId} -> {Status}", input.FlightId, input.Update.Status);
@@ -42,6 +53,11 @@ public sealed class RequestClearanceActivity(DaprClient dapr, ILogger<RequestCle
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, ClearanceRequest request)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.request_clearance");
+        span?.SetTag("flight.id", request.FlightId);
+        span?.SetTag("flight.callsign", request.Callsign);
+        span?.SetTag("clearance.kind", request.Kind.ToString());
+
         await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.ClearanceRequests, request);
         logger.LogInformation("Published {Kind} clearance request for {Callsign}", request.Kind, request.Callsign);
         return true;
@@ -58,10 +74,17 @@ public sealed class CheckWeatherActivity(ILogger<CheckWeatherActivity> logger)
 {
     public override async Task<WeatherSnapshot> RunAsync(WorkflowActivityContext context, CheckWeatherInput _)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.check_weather");
+
         // Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar.
         using var client = DaprClient.CreateInvokeHttpClient(appId: "weather-service");
         var snapshot = await client.GetFromJsonAsync<WeatherSnapshot>("/weather")
             ?? throw new InvalidOperationException("WeatherService returned no snapshot");
+
+        span?.SetTag("weather.condition", snapshot.Condition);
+        span?.SetTag("weather.flyable", snapshot.IsFlyable);
+        span?.SetTag("weather.wind_kt", snapshot.WindKnots);
+
         logger.LogInformation("Weather check: {Condition}, flyable={Flyable}",
             snapshot.Condition, snapshot.IsFlyable);
         return snapshot;
@@ -87,6 +110,10 @@ public sealed class TryAcquireGateActivity(DaprClient dapr, ILogger<TryAcquireGa
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
     public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.try_acquire_gate");
+        span?.SetTag("flight.id", input.FlightId);
+        span?.SetTag("flight.gate", input.Gate);
+
         var resourceId = $"gate:{input.Gate}";
         // 5 minutes is generous enough for boarding + pushback + a buffer; the workflow
         // unlocks explicitly the moment it transitions to Departed.
@@ -96,6 +123,7 @@ public sealed class TryAcquireGateActivity(DaprClient dapr, ILogger<TryAcquireGa
             lockOwner: input.FlightId,
             expiryInSeconds: 300);
 
+        span?.SetTag("gate.lock_acquired", response.Success);
         if (response.Success)
         {
             logger.LogInformation("Acquired gate lock {Gate} for flight {FlightId}",
@@ -117,6 +145,10 @@ public sealed class ReleaseGateActivity(DaprClient dapr, ILogger<ReleaseGateActi
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
     public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
     {
+        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.release_gate");
+        span?.SetTag("flight.id", input.FlightId);
+        span?.SetTag("flight.gate", input.Gate);
+
         var resourceId = $"gate:{input.Gate}";
         try
         {
@@ -129,6 +161,7 @@ public sealed class ReleaseGateActivity(DaprClient dapr, ILogger<ReleaseGateActi
         }
         catch (Exception ex)
         {
+            span?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
             // Best-effort: the lock will expire on its own.
             logger.LogWarning(ex, "Failed to release gate lock {Gate} for flight {FlightId}",
                 input.Gate, input.FlightId);
@@ -136,4 +169,42 @@ public sealed class ReleaseGateActivity(DaprClient dapr, ILogger<ReleaseGateActi
         return true;
     }
 #pragma warning restore DAPR_DISTRIBUTEDLOCK
+}
+
+/// <summary>Workflow -> metrics: how long the workflow had to wait on the gate distributed lock.</summary>
+public sealed record GateWaitMetric(string FlightId, string Gate, double Seconds);
+
+/// <summary>Records the <c>airport.flights.gate_wait_seconds</c> histogram.</summary>
+public sealed class RecordGateWaitMetricActivity : WorkflowActivity<GateWaitMetric, bool>
+{
+    public override Task<bool> RunAsync(WorkflowActivityContext context, GateWaitMetric metric)
+    {
+        AirportTelemetry.GateWaitSeconds.Record(metric.Seconds,
+            new KeyValuePair<string, object?>("gate", metric.Gate));
+        return Task.FromResult(true);
+    }
+}
+
+/// <summary>Workflow -> metrics: terminal flight outcome (Landed / Cancelled) and total wall-clock duration.</summary>
+public sealed record FlightOutcomeMetric(string FlightId, FlightStatus Outcome, string? Reason, double DurationSeconds);
+
+/// <summary>Records flight-lifetime metrics once when a workflow reaches a terminal state.</summary>
+public sealed class RecordFlightOutcomeMetricActivity : WorkflowActivity<FlightOutcomeMetric, bool>
+{
+    public override Task<bool> RunAsync(WorkflowActivityContext context, FlightOutcomeMetric metric)
+    {
+        AirportTelemetry.FlightDurationSeconds.Record(metric.DurationSeconds,
+            new KeyValuePair<string, object?>("outcome", metric.Outcome.ToString()));
+
+        if (metric.Outcome is FlightStatus.Landed)
+        {
+            AirportTelemetry.FlightsLanded.Add(1);
+        }
+        else if (metric.Outcome is FlightStatus.Cancelled)
+        {
+            AirportTelemetry.FlightsCancelled.Add(1,
+                new KeyValuePair<string, object?>("reason", metric.Reason ?? "unknown"));
+        }
+        return Task.FromResult(true);
+    }
 }

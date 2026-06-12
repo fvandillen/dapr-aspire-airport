@@ -57,11 +57,15 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    // Custom application metrics (see Airport.Contracts/AirportTelemetry.cs).
+                    .AddMeter("Airport");
             })
             .WithTracing(tracing =>
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
+                    // Custom application spans (see Airport.Contracts/AirportTelemetry.cs).
+                    .AddSource("Airport")
                     .AddAspNetCoreInstrumentation(tracing =>
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>

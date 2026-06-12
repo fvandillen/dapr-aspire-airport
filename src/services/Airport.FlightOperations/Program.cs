@@ -33,6 +33,8 @@ builder.Services.AddDaprWorkflow(options =>
     options.RegisterActivity<CheckWeatherActivity>();
     options.RegisterActivity<TryAcquireGateActivity>();
     options.RegisterActivity<ReleaseGateActivity>();
+    options.RegisterActivity<RecordGateWaitMetricActivity>();
+    options.RegisterActivity<RecordFlightOutcomeMetricActivity>();
 });
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -182,6 +184,9 @@ flights.MapPost("/{flightId}/cancel", async (
 
     await workflows.TerminateWorkflowAsync(flightId, output: "cancelled by operator");
 
+    AirportTelemetry.FlightsCancelled.Add(1,
+        new KeyValuePair<string, object?>("reason", "operator"));
+
     if (!string.IsNullOrEmpty(gate))
     {
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
@@ -252,6 +257,14 @@ internal static class FlightOps
     {
         var flightId = $"FL-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
 
+        using var span = AirportTelemetry.Source.StartActivity("flight.schedule");
+        span?.SetTag("flight.id", flightId);
+        span?.SetTag("flight.callsign", request.Callsign);
+        span?.SetTag("flight.origin", request.Origin);
+        span?.SetTag("flight.destination", request.Destination);
+        span?.SetTag("flight.gate", request.Gate);
+        span?.SetTag("flight.aircraft_type", request.AircraftType);
+
         var workflowInput = new FlightWorkflowInput(
             flightId, request.Callsign, request.Origin, request.Destination,
             request.AircraftType, request.Gate);
@@ -269,6 +282,9 @@ internal static class FlightOps
             ids.Add(flightId);
             await dapr.SaveStateAsync(DaprTopics.StateStoreName, IndexKey, ids);
         }
+
+        AirportTelemetry.FlightsScheduled.Add(1,
+            new KeyValuePair<string, object?>("destination", request.Destination));
 
         logger.LogInformation("Scheduled flight {FlightId} ({Callsign}) {Origin}->{Destination}",
             flightId, request.Callsign, request.Origin, request.Destination);

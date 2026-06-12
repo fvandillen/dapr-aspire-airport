@@ -32,6 +32,10 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         WorkflowContext context,
         FlightWorkflowInput input)
     {
+        // Deterministic workflow clock; used to compute gate-wait and total flight duration
+        // for the metrics activities below.
+        var workflowStartedAt = context.CurrentUtcDateTime;
+
         // --- 1. Schedule + initialize aircraft actor ----------------------
         await context.CallActivityAsync<bool>(
             nameof(InitializeAircraftActivity),
@@ -45,6 +49,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         // simultaneously. The lock owner is the workflow id, so cancelling the workflow
         // (or letting it crash) eventually frees the gate via the lock TTL.
         var gateLockInput = new GateLockInput(input.FlightId, input.Gate);
+        var gateWaitStart = context.CurrentUtcDateTime;
         var gateAcquired = await context.CallActivityAsync<bool>(
             nameof(TryAcquireGateActivity), gateLockInput);
 
@@ -59,6 +64,11 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
                 nameof(TryAcquireGateActivity), gateLockInput);
             waitCount++;
         }
+
+        var gateWaitSeconds = (context.CurrentUtcDateTime - gateWaitStart).TotalSeconds;
+        await context.CallActivityAsync<bool>(
+            nameof(RecordGateWaitMetricActivity),
+            new GateWaitMetric(input.FlightId, input.Gate, gateWaitSeconds));
 
         await SetStatus(context, input.FlightId, new StatusUpdate(
             FlightStatus.BoardingPushback,
@@ -79,6 +89,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
                 await ReleaseGate(context, gateLockInput);
                 await SetStatus(context, input.FlightId, new StatusUpdate(
                     FlightStatus.Cancelled, Note: $"Cancelled: persistent bad weather ({weather.Condition})"));
+                await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Cancelled, "weather");
                 return new FlightWorkflowResult(false, "Cancelled: weather");
             }
 
@@ -98,6 +109,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             await ReleaseGate(context, gateLockInput);
             await SetStatus(context, input.FlightId, new StatusUpdate(
                 FlightStatus.Cancelled, Note: "Takeoff clearance denied repeatedly"));
+            await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Cancelled, "no-takeoff-clearance");
             return new FlightWorkflowResult(false, "Cancelled: no takeoff clearance");
         }
 
@@ -125,6 +137,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         {
             await SetStatus(context, input.FlightId, new StatusUpdate(
                 FlightStatus.Cancelled, Note: "Diverted: no landing clearance"));
+            await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Cancelled, "no-landing-clearance");
             return new FlightWorkflowResult(false, "Diverted: no landing clearance");
         }
 
@@ -133,6 +146,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             Runway: landing.Runway,
             ActualArrival: context.CurrentUtcDateTime));
 
+        await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Landed, reason: null);
         return new FlightWorkflowResult(true, $"Landed runway {landing.Runway}");
     }
 
@@ -143,6 +157,19 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
     private static Task ReleaseGate(WorkflowContext context, GateLockInput input) =>
         context.CallActivityAsync<bool>(nameof(ReleaseGateActivity), input);
+
+    private static Task RecordOutcome(
+        WorkflowContext context,
+        string flightId,
+        DateTime workflowStartedAt,
+        FlightStatus outcome,
+        string? reason)
+    {
+        var duration = (context.CurrentUtcDateTime - workflowStartedAt).TotalSeconds;
+        return context.CallActivityAsync<bool>(
+            nameof(RecordFlightOutcomeMetricActivity),
+            new FlightOutcomeMetric(flightId, outcome, reason, duration));
+    }
 
     /// <summary>
     /// Waits up to <paramref name="timeout"/>, but returns immediately if the workflow

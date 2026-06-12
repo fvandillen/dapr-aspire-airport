@@ -50,9 +50,15 @@ app.MapPost("/atc/clearance-requests", async (
     WeatherWatch watch,
     ILogger<Program> logger) =>
 {
+    using var span = AirportTelemetry.Source.StartActivity("atc.decide_clearance");
+    span?.SetTag("clearance.kind", request.Kind.ToString());
+    span?.SetTag("flight.id", request.FlightId);
+    span?.SetTag("flight.callsign", request.Callsign);
+
     logger.LogInformation("{Callsign}: {Kind} clearance requested",
         request.Callsign, request.Kind);
 
+    var sw = System.Diagnostics.Stopwatch.StartNew();
     var weather = watch.Latest;
     ClearanceResult result;
 
@@ -97,6 +103,19 @@ app.MapPost("/atc/clearance-requests", async (
     }
 
     await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.ClearanceResults, result);
+
+    sw.Stop();
+    span?.SetTag("clearance.granted", result.Granted);
+    span?.SetTag("clearance.runway", result.Runway);
+    span?.SetTag("clearance.reason", result.Reason);
+
+    AirportTelemetry.ClearanceDecisions.Add(1,
+        new KeyValuePair<string, object?>("clearance.kind", request.Kind.ToString()),
+        new KeyValuePair<string, object?>("clearance.granted", result.Granted),
+        new KeyValuePair<string, object?>("runway", result.Runway));
+    AirportTelemetry.ClearanceDecisionDurationMs.Record(sw.Elapsed.TotalMilliseconds,
+        new KeyValuePair<string, object?>("clearance.kind", request.Kind.ToString()),
+        new KeyValuePair<string, object?>("clearance.granted", result.Granted));
 
     logger.LogInformation("{Callsign}: {Decision} {Reason}",
         request.Callsign,

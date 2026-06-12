@@ -192,10 +192,21 @@ internal sealed class WeatherPublisher(
 
             state.Current = snapshot;
 
+            using var span = AirportTelemetry.Source.StartActivity("weather.publish");
+            span?.SetTag("weather.condition", snapshot.Condition);
+            span?.SetTag("weather.flyable", snapshot.IsFlyable);
+            span?.SetTag("weather.wind_kt", snapshot.WindKnots);
+            span?.SetTag("weather.visibility_m", snapshot.VisibilityMeters);
+            span?.SetTag("weather.override_active", state.Override is not null);
+
             try
             {
                 await dapr.PublishEventAsync(
                     DaprTopics.PubSubName, DaprTopics.WeatherUpdates, snapshot, stoppingToken);
+
+                AirportTelemetry.WeatherPublished.Add(1,
+                    new KeyValuePair<string, object?>("weather.condition", snapshot.Condition),
+                    new KeyValuePair<string, object?>("weather.flyable", snapshot.IsFlyable));
 
                 logger.LogInformation(
                     "Published weather: {Condition} {Temp}°C wind {Wind}kt vis {Vis}m flyable={Flyable} (override={Override})",
@@ -204,6 +215,7 @@ internal sealed class WeatherPublisher(
             }
             catch (Exception ex)
             {
+                span?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
                 logger.LogWarning(ex, "Failed to publish weather snapshot (Dapr sidecar not ready yet?)");
             }
         }
