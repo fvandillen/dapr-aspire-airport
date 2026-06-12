@@ -50,10 +50,17 @@ app.MapPost("/atc/clearance-requests", async (
     WeatherWatch watch,
     ILogger<Program> logger) =>
 {
-    using var span = AirportTelemetry.Source.StartActivity("atc.decide_clearance");
-    span?.SetTag("clearance.kind", request.Kind.ToString());
-    span?.SetTag("flight.id", request.FlightId);
-    span?.SetTag("flight.callsign", request.Callsign);
+    using var span = AirportTelemetry.Source.StartActivity(
+        "atc.decide_clearance",
+        System.Diagnostics.ActivityKind.Consumer,
+        parentContext: FlightTrace.ContextFor(request.FlightId));
+    if (span is not null)
+    {
+        span.DisplayName = $"atc decide {request.Kind} for {request.Callsign}";
+        span.SetTag("clearance.kind", request.Kind.ToString());
+        span.SetTag("flight.id", request.FlightId);
+        span.SetTag("flight.callsign", request.Callsign);
+    }
 
     logger.LogInformation("{Callsign}: {Kind} clearance requested",
         request.Callsign, request.Kind);

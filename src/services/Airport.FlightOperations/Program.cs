@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Airport.Contracts;
 using Airport.FlightOperations.Aircraft;
 using Airport.FlightOperations.Workflows;
@@ -257,13 +258,23 @@ internal static class FlightOps
     {
         var flightId = $"FL-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
 
-        using var span = AirportTelemetry.Source.StartActivity("flight.schedule");
-        span?.SetTag("flight.id", flightId);
-        span?.SetTag("flight.callsign", request.Callsign);
-        span?.SetTag("flight.origin", request.Origin);
-        span?.SetTag("flight.destination", request.Destination);
-        span?.SetTag("flight.gate", request.Gate);
-        span?.SetTag("flight.aircraft_type", request.AircraftType);
+        // Root span for everything emitted for this flight. The parent context is derived
+        // deterministically from the FlightId (see FlightTrace) so every workflow activity
+        // we run later lands in the same trace in the dashboard.
+        using var span = AirportTelemetry.Source.StartActivity(
+            "flight.schedule",
+            ActivityKind.Producer,
+            parentContext: FlightTrace.ContextFor(flightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"flight.schedule {request.Callsign} {request.Origin}→{request.Destination}";
+            span.SetTag("flight.id", flightId);
+            span.SetTag("flight.callsign", request.Callsign);
+            span.SetTag("flight.origin", request.Origin);
+            span.SetTag("flight.destination", request.Destination);
+            span.SetTag("flight.gate", request.Gate);
+            span.SetTag("flight.aircraft_type", request.AircraftType);
+        }
 
         var workflowInput = new FlightWorkflowInput(
             flightId, request.Callsign, request.Origin, request.Destination,

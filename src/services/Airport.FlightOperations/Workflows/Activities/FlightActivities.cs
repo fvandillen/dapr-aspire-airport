@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using Airport.Contracts;
 using Airport.FlightOperations.Aircraft;
@@ -14,10 +15,17 @@ public sealed class InitializeAircraftActivity(ILogger<InitializeAircraftActivit
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, AircraftInitData data)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.initialize_aircraft");
-        span?.SetTag("flight.id", data.FlightId);
-        span?.SetTag("flight.callsign", data.Callsign);
-        span?.SetTag("flight.gate", data.Gate);
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.initialize_aircraft",
+            ActivityKind.Internal,
+            parentContext: FlightTrace.ContextFor(data.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"init aircraft {data.Callsign}";
+            span.SetTag("flight.id", data.FlightId);
+            span.SetTag("flight.callsign", data.Callsign);
+            span.SetTag("flight.gate", data.Gate);
+        }
 
         var actor = AircraftActorProxy.For(data.FlightId);
         await actor.InitializeAsync(data);
@@ -34,11 +42,18 @@ public sealed class UpdateAircraftStatusActivity(ILogger<UpdateAircraftStatusAct
 
     public override async Task<bool> RunAsync(WorkflowActivityContext context, Input input)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.update_status");
-        span?.SetTag("flight.id", input.FlightId);
-        span?.SetTag("flight.status", input.Update.Status.ToString());
-        if (input.Update.Runway is not null) span?.SetTag("flight.runway", input.Update.Runway);
-        if (input.Update.Note is not null) span?.SetTag("flight.note", input.Update.Note);
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.update_status",
+            ActivityKind.Internal,
+            parentContext: FlightTrace.ContextFor(input.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"status → {input.Update.Status}";
+            span.SetTag("flight.id", input.FlightId);
+            span.SetTag("flight.status", input.Update.Status.ToString());
+            if (input.Update.Runway is not null) span.SetTag("flight.runway", input.Update.Runway);
+            if (input.Update.Note is not null) span.SetTag("flight.note", input.Update.Note);
+        }
 
         var actor = AircraftActorProxy.For(input.FlightId);
         await actor.UpdateStatusAsync(input.Update);
@@ -53,10 +68,17 @@ public sealed class RequestClearanceActivity(DaprClient dapr, ILogger<RequestCle
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, ClearanceRequest request)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.request_clearance");
-        span?.SetTag("flight.id", request.FlightId);
-        span?.SetTag("flight.callsign", request.Callsign);
-        span?.SetTag("clearance.kind", request.Kind.ToString());
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.request_clearance",
+            ActivityKind.Producer,
+            parentContext: FlightTrace.ContextFor(request.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"request {request.Kind} clearance ({request.Callsign})";
+            span.SetTag("flight.id", request.FlightId);
+            span.SetTag("flight.callsign", request.Callsign);
+            span.SetTag("clearance.kind", request.Kind.ToString());
+        }
 
         await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.ClearanceRequests, request);
         logger.LogInformation("Published {Kind} clearance request for {Callsign}", request.Kind, request.Callsign);
@@ -74,7 +96,15 @@ public sealed class CheckWeatherActivity(ILogger<CheckWeatherActivity> logger)
 {
     public override async Task<WeatherSnapshot> RunAsync(WorkflowActivityContext context, CheckWeatherInput _)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.check_weather");
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.check_weather",
+            ActivityKind.Client,
+            parentContext: FlightTrace.ContextFor(context.InstanceId));
+        if (span is not null)
+        {
+            span.DisplayName = $"check weather for {context.InstanceId}";
+            span.SetTag("flight.id", context.InstanceId);
+        }
 
         // Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar.
         using var client = DaprClient.CreateInvokeHttpClient(appId: "weather-service");
@@ -110,9 +140,16 @@ public sealed class TryAcquireGateActivity(DaprClient dapr, ILogger<TryAcquireGa
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
     public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.try_acquire_gate");
-        span?.SetTag("flight.id", input.FlightId);
-        span?.SetTag("flight.gate", input.Gate);
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.try_acquire_gate",
+            ActivityKind.Client,
+            parentContext: FlightTrace.ContextFor(input.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"try acquire gate {input.Gate}";
+            span.SetTag("flight.id", input.FlightId);
+            span.SetTag("flight.gate", input.Gate);
+        }
 
         var resourceId = $"gate:{input.Gate}";
         // 5 minutes is generous enough for boarding + pushback + a buffer; the workflow
@@ -145,9 +182,16 @@ public sealed class ReleaseGateActivity(DaprClient dapr, ILogger<ReleaseGateActi
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
     public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
     {
-        using var span = AirportTelemetry.Source.StartActivity("workflow.activity.release_gate");
-        span?.SetTag("flight.id", input.FlightId);
-        span?.SetTag("flight.gate", input.Gate);
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.release_gate",
+            ActivityKind.Client,
+            parentContext: FlightTrace.ContextFor(input.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"release gate {input.Gate}";
+            span.SetTag("flight.id", input.FlightId);
+            span.SetTag("flight.gate", input.Gate);
+        }
 
         var resourceId = $"gate:{input.Gate}";
         try
@@ -179,6 +223,18 @@ public sealed class RecordGateWaitMetricActivity : WorkflowActivity<GateWaitMetr
 {
     public override Task<bool> RunAsync(WorkflowActivityContext context, GateWaitMetric metric)
     {
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.record_gate_wait",
+            ActivityKind.Internal,
+            parentContext: FlightTrace.ContextFor(metric.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"record gate-wait {metric.Seconds:0.0}s ({metric.Gate})";
+            span.SetTag("flight.id", metric.FlightId);
+            span.SetTag("flight.gate", metric.Gate);
+            span.SetTag("gate.wait_seconds", metric.Seconds);
+        }
+
         AirportTelemetry.GateWaitSeconds.Record(metric.Seconds,
             new KeyValuePair<string, object?>("gate", metric.Gate));
         return Task.FromResult(true);
@@ -193,6 +249,19 @@ public sealed class RecordFlightOutcomeMetricActivity : WorkflowActivity<FlightO
 {
     public override Task<bool> RunAsync(WorkflowActivityContext context, FlightOutcomeMetric metric)
     {
+        using var span = AirportTelemetry.Source.StartActivity(
+            "workflow.activity.record_outcome",
+            ActivityKind.Internal,
+            parentContext: FlightTrace.ContextFor(metric.FlightId));
+        if (span is not null)
+        {
+            span.DisplayName = $"outcome: {metric.Outcome} ({metric.DurationSeconds:0.0}s)";
+            span.SetTag("flight.id", metric.FlightId);
+            span.SetTag("flight.outcome", metric.Outcome.ToString());
+            if (metric.Reason is not null) span.SetTag("flight.cancel_reason", metric.Reason);
+            span.SetTag("flight.duration_seconds", metric.DurationSeconds);
+        }
+
         AirportTelemetry.FlightDurationSeconds.Record(metric.DurationSeconds,
             new KeyValuePair<string, object?>("outcome", metric.Outcome.ToString()));
 
