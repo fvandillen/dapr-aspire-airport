@@ -1,0 +1,129 @@
+@page "/weather"
+@inject WeatherApi Wx
+@implements IDisposable
+
+<PageTitle>Weather</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Weather</h1>
+        <p>Snapshots published by the WeatherService over Dapr pub/sub.</p>
+    </div>
+    <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync">
+        <LucideIcon Name="refresh-cw" Size="14" /> Refresh
+    </BbButton>
+</div>
+
+@if (_snapshot is null)
+{
+    <BbCard>
+        <BbCardContent>
+            <div style="display:flex; align-items:center; gap:0.5rem;" class="muted">
+                <BbSpinner /> Waiting for the first weather publish...
+            </div>
+        </BbCardContent>
+    </BbCard>
+}
+else
+{
+    var s = _snapshot;
+    <div class="grid-3" style="margin-bottom: 1rem;">
+        <BbCard>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-label">Condition</span>
+                    <span class="metric-value">@s.Condition</span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+        <BbCard>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-label">Temperature</span>
+                    <span class="metric-value">@s.TemperatureCelsius.ToString("0.0") °C</span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+        <BbCard>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-label">Operations</span>
+                    <span class="metric-value">
+                        @if (s.IsFlyable)
+                        {
+                            <BbBadge Variant="BadgeVariant.Default">Flyable</BbBadge>
+                        }
+                        else
+                        {
+                            <BbBadge Variant="BadgeVariant.Destructive">Below minima</BbBadge>
+                        }
+                    </span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+    </div>
+
+    <div class="grid-3">
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Wind</BbCardTitle>
+            </BbCardHeader>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-value">@s.WindKnots kt</span>
+                    <span class="metric-label">@s.WindDirectionDegrees°</span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Visibility</BbCardTitle>
+            </BbCardHeader>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-value">@s.VisibilityMeters m</span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Cloud base</BbCardTitle>
+            </BbCardHeader>
+            <BbCardContent>
+                <div class="metric">
+                    <span class="metric-value">@s.CloudBaseFeet ft</span>
+                </div>
+            </BbCardContent>
+        </BbCard>
+    </div>
+
+    <p class="muted" style="margin-top: 1rem;">
+        Last observed @s.ObservedAt.ToLocalTime().ToString("HH:mm:ss")
+    </p>
+}
+
+@code {
+    private WeatherSnapshot? _snapshot;
+    private System.Threading.Timer? _poller;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _poller = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(LoadAsync); } catch { }
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _snapshot = await Wx.GetCurrentAsync();
+            StateHasChanged();
+        }
+        catch { /* retry next tick */ }
+    }
+
+    public void Dispose() => _poller?.Dispose();
+}

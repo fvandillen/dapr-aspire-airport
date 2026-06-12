@@ -1,0 +1,173 @@
+$schema: https://demotime.show/demo-time.schema.json
+title: Dapr + Aspire Session
+version: 3
+description: Slides-only flow for .NET Friday session. Live code demos to be added later.
+timer: 45
+scenes:
+  - id: title
+    title: Title
+    description: Open title slide.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 1
+
+  - id: agenda
+    title: Agenda
+    description: Set expectations for the session flow.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 2
+
+  - id: distributed-is-hard
+    title: Distributed systems are hard
+    description: Set the scene with the pain points distributed apps create.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 3
+
+  - id: dapr-what
+    title: What is Dapr?
+    description: One-slide intro to Dapr as a distributed application runtime.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 4
+
+  - id: dapr-sidecar
+    title: The sidecar pattern
+    description: Diagram of the sidecar model and what it does for you.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 5
+
+  - id: dapr-building-blocks
+    title: Building blocks and components
+    description: Table of Dapr building blocks and pluggable components.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 6
+
+  - id: dapr-from-dotnet
+    title: Using Dapr from .NET
+    description: How the Dapr .NET SDK wraps the sidecar.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 7
+
+  - id: aspire-what
+    title: What is .NET Aspire?
+    description: Aspire as a developer-experience and composition toolkit.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 8
+
+  - id: aspire-apphost
+    title: The AppHost
+    description: AppHost as the C# DSL describing the distributed app.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 9
+
+  - id: aspire-service-defaults
+    title: ServiceDefaults
+    description: Shared library wiring OTel, health, discovery, resilience.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 10
+
+  - id: aspire-integrations
+    title: Hosting vs client integrations
+    description: How Aspire integrations split into hosting and client packages.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 11
+
+  - id: aspire-dapr-together
+    title: Aspire + Dapr
+    description: CommunityToolkit Aspire.Hosting.Dapr and WithDaprSidecar.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 12
+
+  - id: reference-architecture
+    title: What we're building today
+    description: Conceptual architecture used across the demos.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 13
+
+  - id: observability-why
+    title: Observability is non-negotiable
+    description: Why distributed apps need correlated traces, logs, metrics.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 14
+
+  - id: otel-in-aspire
+    title: OpenTelemetry in Aspire
+    description: How ServiceDefaults wires OTel end-to-end through sidecars.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 15
+
+  - id: custom-metrics
+    title: Custom metrics with Meter
+    description: Adding business-level metrics with IMeterFactory.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 16
+
+  - id: pubsub-demo
+    title: Pub/Sub with Dapr
+    description: Concept + demo intro for Dapr pub/sub.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 17
+
+  - id: state-demo
+    title: State management with Dapr
+    description: Concept + demo intro for Dapr state store.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 18
+
+  - id: service-to-service-demo
+    title: Service-to-service invocation
+    description: Concept + demo intro for Dapr service invocation.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 19
+
+  - id: workflows-bonus
+    title: Bonus - Dapr Workflows
+    description: Bonus slide on durable code-first orchestrations.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 20
+
+  - id: recap
+    title: Recap and Q&A
+    description: Summarize key takeaways and open the floor.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 21

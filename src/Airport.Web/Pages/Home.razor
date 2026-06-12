@@ -1,0 +1,161 @@
+﻿@page "/"
+@inject FlightsApi Flights
+@implements IDisposable
+
+<PageTitle>AMS Departures</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Departure Board</h1>
+        <p>Live flight status fed by the FlightOperations service.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync">
+            <LucideIcon Name="refresh-cw" Size="14" /> Refresh
+        </BbButton>
+        <BbButton Variant="ButtonVariant.Default" OnClick="SeedAsync" Disabled="@_seeding">
+            <LucideIcon Name="sparkles" Size="14" />
+            @(_seeding ? "Seeding..." : "Seed sample flights")
+        </BbButton>
+    </div>
+</div>
+
+<div class="grid-3" style="margin-bottom: 1rem;">
+    <BbCard>
+        <BbCardContent>
+            <div class="metric">
+                <span class="metric-label">Total flights</span>
+                <span class="metric-value">@_flights.Count</span>
+            </div>
+        </BbCardContent>
+    </BbCard>
+    <BbCard>
+        <BbCardContent>
+            <div class="metric">
+                <span class="metric-label">In the air</span>
+                <span class="metric-value">@_flights.Count(f => f.Status is FlightStatus.Departed or FlightStatus.Cruising or FlightStatus.AwaitingLandingClearance)</span>
+            </div>
+        </BbCardContent>
+    </BbCard>
+    <BbCard>
+        <BbCardContent>
+            <div class="metric">
+                <span class="metric-label">Cancelled / diverted</span>
+                <span class="metric-value">@_flights.Count(f => f.Status is FlightStatus.Cancelled)</span>
+            </div>
+        </BbCardContent>
+    </BbCard>
+</div>
+
+<div class="board">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Flight</th>
+                <th>To</th>
+                <th>Gate</th>
+                <th>Aircraft</th>
+                <th>Runway</th>
+                <th>Status</th>
+                <th>Note</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (_flights.Count == 0)
+            {
+                <tr>
+                    <td colspan="8" style="text-align:center; padding: 2rem;" class="muted">
+                        No flights scheduled yet. Click <em>Seed sample flights</em> above.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var f in _flights)
+                {
+                    <tr class="@RowClass(f.Status)">
+                        <td>@f.ScheduledDeparture.ToLocalTime().ToString("HH:mm")</td>
+                        <td><strong>@f.Callsign</strong></td>
+                        <td>@f.Destination</td>
+                        <td>@f.Gate</td>
+                        <td>@f.AircraftType</td>
+                        <td>@(f.Runway ?? "—")</td>
+                        <td><span class="badge @StatusClass(f.Status)">@StatusLabel(f.Status)</span></td>
+                        <td class="muted">@(f.Note ?? "")</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<FlightView> _flights = new();
+    private System.Threading.Timer? _poller;
+    private bool _seeding;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _poller = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(LoadAsync); }
+            catch { /* swallow during teardown */ }
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var flights = await Flights.GetAllAsync();
+            _flights = flights.ToList();
+            StateHasChanged();
+        }
+        catch
+        {
+            // backend warming up — try again on the next tick
+        }
+    }
+
+    private async Task SeedAsync()
+    {
+        _seeding = true;
+        try
+        {
+            await Flights.SeedAsync();
+            await LoadAsync();
+        }
+        finally
+        {
+            _seeding = false;
+        }
+    }
+
+    private static string StatusClass(FlightStatus s) => s switch
+    {
+        FlightStatus.Scheduled                  => "status-scheduled",
+        FlightStatus.BoardingPushback           => "status-boarding",
+        FlightStatus.AwaitingTakeoffClearance   => "status-cleared",
+        FlightStatus.Departed                   => "status-departed",
+        FlightStatus.Cruising                   => "status-cruising",
+        FlightStatus.AwaitingLandingClearance   => "status-landing",
+        FlightStatus.Landed                     => "status-landed",
+        FlightStatus.Cancelled                  => "status-cancelled",
+        _ => "status-scheduled",
+    };
+
+    private static string StatusLabel(FlightStatus s) => s switch
+    {
+        FlightStatus.BoardingPushback           => "BOARDING",
+        FlightStatus.AwaitingTakeoffClearance   => "AWAIT T/O",
+        FlightStatus.AwaitingLandingClearance   => "AWAIT LDG",
+        _ => s.ToString().ToUpperInvariant(),
+    };
+
+    private static string RowClass(FlightStatus s) =>
+        s is FlightStatus.Landed or FlightStatus.Cancelled ? "muted-row" : "";
+
+    public void Dispose() => _poller?.Dispose();
+}

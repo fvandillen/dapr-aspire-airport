@@ -1,0 +1,125 @@
+@page "/operations"
+@inject FlightsApi Flights
+
+<PageTitle>Operations</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Operations</h1>
+        <p>Schedule a new flight to kick off a Dapr workflow + Aircraft actor.</p>
+    </div>
+</div>
+
+<div class="grid-2">
+    <BbCard>
+        <BbCardHeader>
+            <BbCardTitle>New flight</BbCardTitle>
+            <BbCardDescription>POSTs to <code>/flights</code> on FlightOperations.</BbCardDescription>
+        </BbCardHeader>
+        <BbCardContent>
+            <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                <div>
+                    <BbLabel For="callsign">Callsign</BbLabel>
+                    <BbInput Id="callsign" @bind-Value="_callsign" Placeholder="KL1611" />
+                </div>
+                <div class="grid-2">
+                    <div>
+                        <BbLabel For="origin">Origin</BbLabel>
+                        <BbInput Id="origin" @bind-Value="_origin" Placeholder="AMS" />
+                    </div>
+                    <div>
+                        <BbLabel For="destination">Destination</BbLabel>
+                        <BbInput Id="destination" @bind-Value="_destination" Placeholder="BCN" />
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div>
+                        <BbLabel For="aircraft">Aircraft</BbLabel>
+                        <BbInput Id="aircraft" @bind-Value="_aircraft" Placeholder="Boeing 737-800" />
+                    </div>
+                    <div>
+                        <BbLabel For="gate">Gate</BbLabel>
+                        <BbInput Id="gate" @bind-Value="_gate" Placeholder="D12" />
+                    </div>
+                </div>
+                <BbButton Variant="ButtonVariant.Default" OnClick="ScheduleAsync" Disabled="@_busy">
+                    <LucideIcon Name="plane-takeoff" Size="14" />
+                    @(_busy ? "Scheduling..." : "Schedule flight")
+                </BbButton>
+                @if (_lastError is not null)
+                {
+                    <div style="border:1px solid var(--destructive); background:color-mix(in oklab, var(--destructive) 12%, transparent); border-radius:var(--radius); padding:0.75rem 1rem;">
+                        <strong style="display:block; color:var(--destructive);">Could not schedule</strong>
+                        <span class="muted">@_lastError</span>
+                    </div>
+                }
+            </div>
+        </BbCardContent>
+    </BbCard>
+
+    <BbCard>
+        <BbCardHeader>
+            <BbCardTitle>What happens when I click Schedule?</BbCardTitle>
+        </BbCardHeader>
+        <BbCardContent>
+            <ol style="padding-left:1rem; margin:0; line-height:1.7;">
+                <li><strong>FlightOperations</strong> POSTs to its own minimal API and starts a <code>FlightWorkflow</code>.</li>
+                <li>The workflow initializes the <strong>Aircraft actor</strong> (state persists in the Dapr state store).</li>
+                <li>It calls the <strong>WeatherService</strong> via Dapr service invocation.</li>
+                <li>Publishes a <code>clearance-requests</code> event via Dapr pub/sub.</li>
+                <li><strong>ATC</strong> subscribes, decides, persists the clearance, publishes <code>clearance-results</code>.</li>
+                <li>FlightOperations subscribes and raises an external event on the workflow.</li>
+                <li>Workflow walks through cruise, landing clearance, and lands the aircraft.</li>
+            </ol>
+        </BbCardContent>
+    </BbCard>
+</div>
+
+@if (_lastScheduled is not null)
+{
+    <BbCard style="margin-top:1rem;">
+        <BbCardHeader>
+            <BbCardTitle>Last scheduled flight</BbCardTitle>
+            <BbCardDescription>Flight id <code>@_lastScheduled.FlightId</code></BbCardDescription>
+        </BbCardHeader>
+        <BbCardContent>
+            <div class="muted">
+                @_lastScheduled.Callsign · @_lastScheduled.Origin → @_lastScheduled.Destination ·
+                @_lastScheduled.AircraftType · gate @_lastScheduled.Gate
+            </div>
+        </BbCardContent>
+    </BbCard>
+}
+
+@code {
+    private string _callsign = "KL1611";
+    private string _origin = "AMS";
+    private string _destination = "BCN";
+    private string _aircraft = "Boeing 737-800";
+    private string _gate = "D12";
+
+    private bool _busy;
+    private string? _lastError;
+    private FlightView? _lastScheduled;
+
+    private async Task ScheduleAsync()
+    {
+        _busy = true;
+        _lastError = null;
+        try
+        {
+            var view = await Flights.ScheduleAsync(new ScheduleFlightRequest(
+                _callsign, _origin, _destination, _aircraft, _gate,
+                DateTimeOffset.UtcNow.AddMinutes(5)));
+            _lastScheduled = view;
+        }
+        catch (Exception ex)
+        {
+            _lastError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

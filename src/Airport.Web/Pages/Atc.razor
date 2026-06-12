@@ -1,0 +1,108 @@
+@page "/atc"
+@inject AtcApi Tower
+@implements IDisposable
+
+<PageTitle>ATC Tower</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>ATC Tower</h1>
+        <p>Active clearances persisted in the Dapr state store.</p>
+    </div>
+    <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync">
+        <LucideIcon Name="refresh-cw" Size="14" /> Refresh
+    </BbButton>
+</div>
+
+<BbCard>
+    <BbCardHeader>
+        <BbCardTitle>Active runway clearances</BbCardTitle>
+        <BbCardDescription>Each entry expires automatically after 15 seconds.</BbCardDescription>
+    </BbCardHeader>
+    <BbCardContent>
+        @if (_clearances.Count == 0)
+        {
+            <p class="muted">No active clearances.</p>
+        }
+        else
+        {
+            <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                    <tr style="text-align:left; border-bottom:1px solid var(--border);">
+                        <th style="padding:0.5rem 0;">Callsign</th>
+                        <th>Type</th>
+                        <th>Runway</th>
+                        <th>Granted</th>
+                        <th>Expires</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _clearances)
+                    {
+                        <tr style="border-bottom:1px solid var(--border);">
+                            <td style="padding:0.5rem 0;"><strong>@c.Callsign</strong></td>
+                            <td>
+                                <BbBadge Variant="@(c.Kind == ClearanceKind.Takeoff ? BadgeVariant.Default : BadgeVariant.Secondary)">
+                                    @c.Kind
+                                </BbBadge>
+                            </td>
+                            <td style="font-family:monospace;">@c.Runway</td>
+                            <td>@c.GrantedAt.ToLocalTime().ToString("HH:mm:ss")</td>
+                            <td>@c.ExpiresAt.ToLocalTime().ToString("HH:mm:ss")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </BbCardContent>
+</BbCard>
+
+@if (_lastWeather is not null)
+{
+    <BbCard style="margin-top:1rem;">
+        <BbCardHeader>
+            <BbCardTitle>Last weather observed by ATC</BbCardTitle>
+            <BbCardDescription>
+                ATC subscribes to the same <code>weather-updates</code> topic the WeatherService publishes to.
+            </BbCardDescription>
+        </BbCardHeader>
+        <BbCardContent>
+            <div class="muted">
+                @_lastWeather.Condition · wind @_lastWeather.WindKnots kt · vis @_lastWeather.VisibilityMeters m
+                @if (!_lastWeather.IsFlyable)
+                {
+                    <BbBadge Variant="BadgeVariant.Destructive" Class="ml-2">below minima</BbBadge>
+                }
+            </div>
+        </BbCardContent>
+    </BbCard>
+}
+
+@code {
+    private List<ActiveClearance> _clearances = new();
+    private WeatherSnapshot? _lastWeather;
+    private System.Threading.Timer? _poller;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _poller = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(LoadAsync); } catch { }
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var clearances = await Tower.GetActiveClearancesAsync();
+            _clearances = clearances.ToList();
+            _lastWeather = await Tower.GetLastSeenWeatherAsync();
+            StateHasChanged();
+        }
+        catch { /* retry next tick */ }
+    }
+
+    public void Dispose() => _poller?.Dispose();
+}

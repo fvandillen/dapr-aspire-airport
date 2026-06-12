@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+# Aspire
+*.user
+.aspire/
+
+# Rider/VS
+.vs/
+.idea/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# WASM publish
+**/publish/
+
+# Logs
+*.log

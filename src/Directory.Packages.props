@@ -1,0 +1,56 @@
+<Project>
+  <PropertyGroup>
+    <!-- Latest stable Aspire 13.x (calver) compatible with .NET 10 -->
+    <AspireVersion>13.4.3</AspireVersion>
+    <!-- CommunityToolkit Aspire integrations (Dapr lives here) -->
+    <AspireCommunityToolkitVersion>13.0.0</AspireCommunityToolkitVersion>
+    <!-- Microsoft.Extensions.* (own versioning track, .NET 10 GA = 10.6.x) -->
+    <MicrosoftExtensionsVersion>10.6.0</MicrosoftExtensionsVersion>
+    <!-- AspNetCore packages (servicing patch released with the net10 SDK) -->
+    <AspNetCoreVersion>10.0.8</AspNetCoreVersion>
+    <!-- Dapr .NET SDK -->
+    <DaprVersion>1.18.1</DaprVersion>
+    <!-- OpenTelemetry -->
+    <OpenTelemetryVersion>1.15.3</OpenTelemetryVersion>
+    <OpenTelemetryInstrumentationAspNetCoreVersion>1.15.2</OpenTelemetryInstrumentationAspNetCoreVersion>
+    <OpenTelemetryInstrumentationHttpVersion>1.15.1</OpenTelemetryInstrumentationHttpVersion>
+    <OpenTelemetryInstrumentationRuntimeVersion>1.15.1</OpenTelemetryInstrumentationRuntimeVersion>
+    <!-- Blazor Blueprint components -->
+    <BlazorBlueprintVersion>3.11.0</BlazorBlueprintVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Aspire core -->
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="$(AspireVersion)" />
+
+    <!-- Service discovery + HTTP resilience (used by ServiceDefaults) -->
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="$(MicrosoftExtensionsVersion)" />
+
+    <!-- OpenTelemetry stack used by ServiceDefaults -->
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="$(OpenTelemetryVersion)" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="$(OpenTelemetryVersion)" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="$(OpenTelemetryInstrumentationAspNetCoreVersion)" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="$(OpenTelemetryInstrumentationHttpVersion)" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="$(OpenTelemetryInstrumentationRuntimeVersion)" />
+
+    <!-- Aspire Dapr integration (community toolkit) -->
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Dapr" Version="$(AspireCommunityToolkitVersion)" />
+
+    <!-- Dapr .NET SDK -->
+    <PackageVersion Include="Dapr.AspNetCore" Version="$(DaprVersion)" />
+    <PackageVersion Include="Dapr.Client" Version="$(DaprVersion)" />
+    <PackageVersion Include="Dapr.Actors" Version="$(DaprVersion)" />
+    <PackageVersion Include="Dapr.Actors.AspNetCore" Version="$(DaprVersion)" />
+    <PackageVersion Include="Dapr.Workflow" Version="$(DaprVersion)" />
+
+    <!-- AspNetCore -->
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(AspNetCoreVersion)" />
+
+    <!-- Blazor WASM frontend -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="$(AspNetCoreVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="$(AspNetCoreVersion)" />
+    <PackageVersion Include="BlazorBlueprint.Components" Version="$(BlazorBlueprintVersion)" />
+  </ItemGroup>
+</Project>

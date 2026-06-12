@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/shared/">
+    <Project Path="Airport.ServiceDefaults/Airport.ServiceDefaults.csproj" />
+    <Project Path="Airport.Contracts/Airport.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/services/">
+    <Project Path="services/Airport.WeatherService/Airport.WeatherService.csproj" />
+    <Project Path="services/Airport.AtcService/Airport.AtcService.csproj" />
+    <Project Path="services/Airport.FlightOperations/Airport.FlightOperations.csproj" />
+  </Folder>
+  <Folder Name="/apphost/">
+    <Project Path="Airport.AppHost/Airport.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <Project Path="Airport.Web/Airport.Web.csproj" />
+  </Folder>
+  <Folder Name="/dapr/">
+    <File Path="dapr/components/pubsub.yaml" />
+    <File Path="dapr/components/statestore.yaml" />
+  </Folder>
+</Solution>
