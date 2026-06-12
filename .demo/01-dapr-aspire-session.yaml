@@ -1,9 +1,14 @@
 $schema: https://demotime.show/demo-time.schema.json
 title: Dapr + Aspire Session
 version: 3
-description: Slides-only flow for .NET Friday session. Live code demos to be added later.
+description: >-
+  Slides + code highlights for .NET Friday. Aspire is started manually and all
+  live demos in the running app are driven by the presenter. The act advances
+  through the deck and opens / highlights the relevant source files when the
+  slide cues say "Demo".
 timer: 45
 scenes:
+
   - id: title
     title: Title
     description: Open title slide.
@@ -14,7 +19,7 @@ scenes:
 
   - id: agenda
     title: Agenda
-    description: Set expectations for the session flow.
+    description: Set expectations for the talk.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
@@ -22,39 +27,39 @@ scenes:
 
   - id: distributed-is-hard
     title: Distributed systems are hard
-    description: Set the scene with the pain points distributed apps create.
+    description: Frame the problem.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 3
 
-  - id: dapr-what
-    title: What is Dapr?
-    description: One-slide intro to Dapr as a distributed application runtime.
+  - id: meet-the-airport
+    title: Meet the airport
+    description: Introduce the demo app via the topology diagram.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 4
 
-  - id: dapr-sidecar
-    title: The sidecar pattern
-    description: Diagram of the sidecar model and what it does for you.
+  - id: dapr-what
+    title: What is Dapr?
+    description: One-slide intro to Dapr.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 5
 
-  - id: dapr-building-blocks
-    title: Building blocks and components
-    description: Table of Dapr building blocks and pluggable components.
+  - id: dapr-sidecar
+    title: The sidecar pattern
+    description: Diagram of the sidecar model.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 6
 
-  - id: dapr-from-dotnet
-    title: Using Dapr from .NET
-    description: How the Dapr .NET SDK wraps the sidecar.
+  - id: dapr-building-blocks
+    title: Building blocks & components
+    description: Table of Dapr building blocks and components.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
@@ -62,7 +67,7 @@ scenes:
 
   - id: aspire-what
     title: What is .NET Aspire?
-    description: Aspire as a developer-experience and composition toolkit.
+    description: Aspire as a DX + composition toolkit.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
@@ -70,19 +75,26 @@ scenes:
 
   - id: aspire-apphost
     title: The AppHost
-    description: AppHost as the C# DSL describing the distributed app.
+    description: AppHost concept slide.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 9
 
   - id: aspire-service-defaults
-    title: ServiceDefaults
-    description: Shared library wiring OTel, health, discovery, resilience.
+    title: ServiceDefaults — OTel out of the box
+    description: >-
+      Slide first, then open the real Extensions.cs and highlight the OTel
+      registration block that every service inherits via AddServiceDefaults().
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 10
+      - action: open
+        path: src/Airport.ServiceDefaults/Extensions.cs
+      - action: highlight
+        path: src/Airport.ServiceDefaults/Extensions.cs
+        position: "55:78"
 
   - id: aspire-integrations
     title: Hosting vs client integrations
@@ -93,28 +105,32 @@ scenes:
         slide: 11
 
   - id: aspire-dapr-together
-    title: Aspire + Dapr
-    description: CommunityToolkit Aspire.Hosting.Dapr and WithDaprSidecar.
+    title: Aspire + Dapr in our AppHost
+    description: >-
+      Slide first; then open the real AppHost.cs and highlight the SidecarFor
+      helper followed by the WithDaprSidecar wiring for all three services.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 12
+      - action: open
+        path: src/Airport.AppHost/AppHost.cs
+      - action: highlight
+        path: src/Airport.AppHost/AppHost.cs
+        startPlaceholder: DaprSidecarOptions SidecarFor(string appId) => new()
+        endPlaceholder: LogLevel = "info",
+      - action: highlight
+        path: src/Airport.AppHost/AppHost.cs
+        startPlaceholder: "// --- Backend services (each with its own Dapr sidecar) -----------------------"
+        endPlaceholder: .WithDaprSidecar(SidecarFor("flight-ops"));
 
-  - id: reference-architecture
-    title: What we're building today
-    description: Conceptual architecture used across the demos.
+  - id: observability-why
+    title: Observability is non-negotiable
+    description: Why distributed apps need correlated telemetry.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 13
-
-  - id: observability-why
-    title: Observability is non-negotiable
-    description: Why distributed apps need correlated traces, logs, metrics.
-    moves:
-      - action: openSlide
-        path: .demo/slides/dapr-aspire-session.md
-        slide: 14
 
   - id: otel-in-aspire
     title: OpenTelemetry in Aspire
@@ -122,47 +138,99 @@ scenes:
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
-        slide: 15
+        slide: 14
 
   - id: custom-metrics
     title: Custom metrics with Meter
-    description: Adding business-level metrics with IMeterFactory.
+    description: >-
+      Slide on Meter / IMeterFactory, then open AirportTelemetry.cs and
+      highlight the ATC clearance counter + histogram pair.
+    moves:
+      - action: openSlide
+        path: .demo/slides/dapr-aspire-session.md
+        slide: 15
+      - action: open
+        path: src/Airport.Contracts/AirportTelemetry.cs
+      - action: highlight
+        path: src/Airport.Contracts/AirportTelemetry.cs
+        startPlaceholder: public static readonly Counter<long> ClearanceDecisions =
+        endPlaceholder: 'description: "Wall-clock time spent deciding on a clearance request.");'
+
+  - id: pubsub-demo
+    title: Pub/Sub with Dapr — weather → ATC
+    description: >-
+      Slide, then publisher (WeatherService) and subscriber (AtcService) code.
+      Drive the live demo manually in the running app.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 16
+      - action: open
+        path: src/services/Airport.WeatherService/Program.cs
+      - action: highlight
+        path: src/services/Airport.WeatherService/Program.cs
+        startPlaceholder: static async Task PublishCurrent(DaprClient dapr, WeatherState state)
+        endPlaceholder: "// Best-effort: the periodic loop will retry."
+      - action: open
+        path: src/services/Airport.AtcService/Program.cs
+      - action: highlight
+        path: src/services/Airport.AtcService/Program.cs
+        startPlaceholder: app.MapPost("/atc/weather-updates",
+        endPlaceholder: .WithTopic(DaprTopics.PubSubName, DaprTopics.WeatherUpdates);
 
-  - id: pubsub-demo
-    title: Pub/Sub with Dapr
-    description: Concept + demo intro for Dapr pub/sub.
+  - id: state-demo
+    title: State management with Dapr — active clearances
+    description: >-
+      Slide, then highlight the AtcService clearance handler reading + writing
+      the active-clearances map. Drive the live demo manually in the running app.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 17
+      - action: open
+        path: src/services/Airport.AtcService/Program.cs
+      - action: highlight
+        path: src/services/Airport.AtcService/Program.cs
+        startPlaceholder: var map = await dapr.GetStateAsync<Dictionary<string, ActiveClearance>>(
+        endPlaceholder: await dapr.SaveStateAsync(DaprTopics.StateStoreName, ActiveClearancesKey, map);
 
-  - id: state-demo
-    title: State management with Dapr
-    description: Concept + demo intro for Dapr state store.
+  - id: invocation-demo
+    title: Service invocation — workflow calls weather
+    description: >-
+      Slide, then highlight CheckWeatherActivity using
+      DaprClient.CreateInvokeHttpClient to talk to the weather sidecar by app id.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 18
+      - action: open
+        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+        startPlaceholder: "// Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar."
+        endPlaceholder: '?? throw new InvalidOperationException("WeatherService returned no snapshot");'
 
-  - id: service-to-service-demo
-    title: Service-to-service invocation
-    description: Concept + demo intro for Dapr service invocation.
+  - id: workflows-bonus
+    title: Bonus — Dapr Workflows + Actors
+    description: >-
+      Slide, then the FlightWorkflow takeoff section and the Aircraft actor's
+      UpdateStatusAsync. Drive the live demo (schedule a flight) manually.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 19
-
-  - id: workflows-bonus
-    title: Bonus - Dapr Workflows
-    description: Bonus slide on durable code-first orchestrations.
-    moves:
-      - action: openSlide
-        path: .demo/slides/dapr-aspire-session.md
-        slide: 20
+      - action: open
+        path: src/services/Airport.FlightOperations/Workflows/FlightWorkflow.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Workflows/FlightWorkflow.cs
+        startPlaceholder: "// --- 3. Takeoff clearance request/wait loop -----------------------"
+        endPlaceholder: "ActualDeparture: context.CurrentUtcDateTime));"
+      - action: open
+        path: src/services/Airport.FlightOperations/Aircraft/AircraftActor.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Aircraft/AircraftActor.cs
+        startPlaceholder: public async Task UpdateStatusAsync(StatusUpdate update)
+        endPlaceholder: next.Callsign, next.Status, next.Runway ?? "-");
 
   - id: recap
     title: Recap and Q&A
@@ -170,4 +238,4 @@ scenes:
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
-        slide: 21
+        slide: 20

@@ -1,0 +1,259 @@
+/* ============================================================
+   4Dotnet Dark — DemoTime custom theme
+   Brand palette extracted from 4Dotnet_template_2026_dark.potx
+   ============================================================
+   Primary Blue   #1E22AA  — intro / section backgrounds
+   Magenta        #CE0F69  — accent, highlights, markers
+   White          #FFFFFF  — body text
+   Black          #000000  — content slide backgrounds
+   Dark Gray      #595959
+   Light Gray     #A5A5A5
+   Font           Calibri → Segoe UI → system-ui
+   ============================================================ */
+
+body {
+  /* ── Global tokens ─────────────────────────────────────── */
+  --4dn-blue:    #1E22AA;
+  --4dn-pink:    #CE0F69;
+  --4dn-white:   #FFFFFF;
+  --4dn-black:   #000000;
+  --4dn-gray:    #595959;
+  --4dn-lgray:   #A5A5A5;
+
+  /* ── DemoTime core variables ──────────────────────────── */
+  --demotime-color:                  var(--4dn-white);
+  --demotime-background:             var(--4dn-black);
+  --demotime-heading-color:          var(--4dn-white);
+  --demotime-heading-background:     transparent;
+  --demotime-font-size:              1rem;
+  --demotime-link-color:             var(--4dn-pink);
+  --demotime-link-active-color:      #ff2b8a;
+  --demotime-blockquote-border:      4px solid var(--4dn-pink);
+  --demotime-blockquote-background:  rgba(206, 15, 105, 0.08);
+
+  /* ── intro layout (title slide — brand blue) ──────────── */
+  --demotime-intro-background:         var(--4dn-blue);
+  --demotime-intro-color:              var(--4dn-white);
+  --demotime-intro-heading-color:      var(--4dn-white);
+  --demotime-intro-heading-background: transparent;
+
+  /* ── default layout (content — near-black) ────────────── */
+  --demotime-default-background:         var(--4dn-black);
+  --demotime-default-color:              var(--4dn-white);
+  --demotime-default-heading-color:      var(--4dn-white);
+  --demotime-default-heading-background: transparent;
+
+  /* ── section layout (chapter break — brand blue) ─────── */
+  --demotime-section-background:         var(--4dn-blue);
+  --demotime-section-color:              var(--4dn-white);
+  --demotime-section-heading-color:      var(--4dn-white);
+  --demotime-section-heading-background: transparent;
+
+  /* ── quote layout ─────────────────────────────────────── */
+  --demotime-quote-background:         var(--4dn-black);
+  --demotime-quote-color:              var(--4dn-white);
+  --demotime-quote-heading-color:      var(--4dn-pink);
+  --demotime-quote-heading-background: transparent;
+
+  /* ── image-left / image-right layouts ────────────────── */
+  --demotime-image-left-background:         var(--4dn-black);
+  --demotime-image-left-color:              var(--4dn-white);
+  --demotime-image-left-heading-color:      var(--4dn-pink);
+  --demotime-image-left-heading-background: transparent;
+
+  --demotime-image-right-background:         var(--4dn-black);
+  --demotime-image-right-color:              var(--4dn-white);
+  --demotime-image-right-heading-color:      var(--4dn-pink);
+  --demotime-image-right-heading-background: transparent;
+
+  /* ── two-columns layout ───────────────────────────────── */
+  --demotime-two-columns-background:         var(--4dn-black);
+  --demotime-two-columns-color:              var(--4dn-white);
+  --demotime-two-columns-heading-color:      var(--4dn-white);
+  --demotime-two-columns-heading-background: transparent;
+
+  font-family: 'Calibri', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Headings ─────────────────────────────────────────────── */
+h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  color: var(--demotime-heading-color);
+}
+
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--demotime-heading-color);
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--4dn-lgray);
+}
+
+/* ── Links ────────────────────────────────────────────────── */
+a {
+  color: var(--demotime-link-color);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--demotime-link-active-color);
+  text-decoration: underline;
+}
+
+/* ── Blockquotes ──────────────────────────────────────────── */
+blockquote {
+  border-left: var(--demotime-blockquote-border);
+  background: var(--demotime-blockquote-background);
+  padding: 0.75rem 1.25rem;
+  margin: 1rem 0;
+  border-radius: 0 4px 4px 0;
+  font-style: italic;
+}
+
+/* ── Inline emphasis ──────────────────────────────────────── */
+strong {
+  color: var(--4dn-pink);
+  font-weight: 700;
+}
+
+/* ── Lists ────────────────────────────────────────────────── */
+ul, ol {
+  margin-left: 1.5rem;
+  line-height: 1.9;
+}
+
+ul li::marker {
+  color: var(--4dn-pink);
+}
+
+/* ── Code ─────────────────────────────────────────────────── */
+code {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(206, 15, 105, 0.35);
+  border-radius: 3px;
+  padding: 0.1em 0.4em;
+  font-size: 0.88em;
+  color: var(--4dn-white);
+}
+
+pre {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(206, 15, 105, 0.25);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+}
+
+pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+/* ── Horizontal rule ──────────────────────────────────────── */
+hr {
+  border: none;
+  border-top: 1px solid var(--4dn-pink);
+  margin: 1.5rem 0;
+  opacity: 0.6;
+}
+
+/* ================================================================
+   LAYOUT OVERRIDES
+   ================================================================ */
+
+/* ── intro — brand-blue title slide ──────────────────────── */
+.intro {
+  background: var(--demotime-intro-background);
+  color: var(--demotime-intro-color);
+}
+
+.intro h1 {
+  font-size: 4rem;
+  color: var(--demotime-intro-heading-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.4);
+}
+
+.intro p {
+  font-size: 1.25rem;
+  opacity: 0.85;
+}
+
+/* ── section — chapter break on brand blue ────────────────── */
+.section {
+  background: var(--demotime-section-background);
+  color: var(--demotime-section-color);
+}
+
+.section h1 {
+  font-size: 3.5rem;
+  color: var(--demotime-section-heading-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-left: 6px solid var(--4dn-pink);
+  padding-left: 0.85rem;
+}
+
+.section p {
+  opacity: 0.8;
+}
+
+/* ── quote ────────────────────────────────────────────────── */
+.quote {
+  background: var(--demotime-quote-background);
+  color: var(--demotime-quote-color);
+}
+
+.quote h1,
+.quote h2 {
+  color: var(--demotime-quote-heading-color);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── image-left — speaker/photo slides ───────────────────── */
+.image-left {
+  background: var(--demotime-image-left-background);
+  color: var(--demotime-image-left-color);
+}
+
+.image-left h1,
+.image-left h2 {
+  color: var(--demotime-image-left-heading-color);
+}
+
+/* ── image-right ──────────────────────────────────────────── */
+.image-right {
+  background: var(--demotime-image-right-background);
+  color: var(--demotime-image-right-color);
+}
+
+.image-right h1,
+.image-right h2 {
+  color: var(--demotime-image-right-heading-color);
+}
+
+/* ── two-columns ──────────────────────────────────────────── */
+.two-columns {
+  background: var(--demotime-two-columns-background);
+  color: var(--demotime-two-columns-color);
+}
+
+.two-columns h1 {
+  border-bottom: 2px solid var(--4dn-pink);
+  padding-bottom: 0.3rem;
+}

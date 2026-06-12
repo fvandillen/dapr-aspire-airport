@@ -1,26 +1,26 @@
 ---
-theme: default
+customTheme: .demo/4dotnet-dark.css
 layout: intro
 transition: fade
 ---
 
 # Dapr + Aspire
 ## Distributed Systems Without the Headache
+Florian van Dillen - Cloud Solution Architect
 
-.NET Friday — June 2026
+dotnetfriday — June 2026
 
 ---
 
 # Agenda
 
-1. **Dapr** — sidecar, building blocks, components, .NET SDK
-2. **Aspire** — AppHost, ServiceDefaults, hosting & client integrations
-3. **Aspire + Dapr** — the easy button
-4. **OpenTelemetry** — distributed observability + custom metrics
-5. **Pub/Sub** with Dapr
-6. **State store** with Dapr
-7. **Service-to-service** invocation with Dapr
-8. *Bonus:* **Dapr Workflows**
+1. **The pain** — why distributed systems eat your week
+2. **Meet the airport** — the demo app we'll dissect for the rest of the talk
+3. **Dapr** — sidecar, building blocks, components
+4. **Aspire** — AppHost, ServiceDefaults, the Dapr integration
+5. **Observability** — OpenTelemetry, sidecar traces, custom metrics
+6. **Building blocks in action** — pub/sub, state, service invocation
+7. *Bonus:* **Workflows + Actors**
 
 ---
 
@@ -36,6 +36,32 @@ Every service ends up solving the same boring problems:
 - Observability bolted on **after** the incident
 
 > Plumbing eats the feature backlog.
+
+---
+
+# Meet The Airport
+
+A tiny distributed system that exercises every Dapr building block we'll discuss.
+
+```mermaid
+flowchart LR
+    UI["Airport.Web<br/>(Blazor WASM)"]
+    UI --> FO["FlightOperations<br/>workflow + Aircraft actor"]
+    UI --> ATC["AtcService<br/>clearance decisions"]
+    UI --> WX["WeatherService<br/>periodic publisher"]
+    FO <-->|sidecar| FOd["daprd"]
+    ATC <-->|sidecar| ATCd["daprd"]
+    WX <-->|sidecar| WXd["daprd"]
+    WXd -- weather-updates --> ATCd
+    FOd -- clearance-requests --> ATCd
+    ATCd -- clearance-results --> FOd
+    ATCd -. state .-> Redis[(Redis)]
+    FOd -. state + actor + lock .-> Redis
+```
+
+- One **Aspire AppHost** boots everything (services + sidecars + dashboard).
+- Three Dapr **building blocks** in active use: pub/sub, state store, distributed lock, plus actors and workflows.
+- Live UI: departure board, ATC tower, weather control panel.
 
 ---
 
@@ -78,36 +104,12 @@ flowchart LR
 | Service invocation | Call other services by name | Built-in (HTTP/gRPC + mTLS) |
 | Pub/Sub | Async messaging, CloudEvents | Redis, Service Bus, Kafka, RabbitMQ |
 | State management | Durable KV with ETag / TTL | Redis, Cosmos DB, Postgres |
-| Bindings | Trigger / output to external systems | Blob, Event Grid, Cron, … |
-| Secrets | Read secrets from a store | Key Vault, env vars, local file |
+| Distributed lock | Mutual exclusion across instances | Redis, Cosmos DB |
+| Actors | Per-entity state + behavior | Built-in (state-store backed) |
 | Workflows | Durable code-first orchestrations | Built-in (actor-based) |
 
 A **component** is a YAML manifest that binds a building block to a real backend.
-
----
-
-# Using Dapr From .NET
-
-You don't have to talk HTTP yourself — there's an SDK.
-
-```csharp
-// Program.cs
-builder.Services.AddDaprClient();
-
-// In a service
-public class OrderService(DaprClient dapr)
-{
-    public Task PublishOrderAsync(Order order) =>
-        dapr.PublishEventAsync("pubsub", "orders.created", order);
-
-    public Task<Cart?> GetCartAsync(string id) =>
-        dapr.GetStateAsync<Cart>("statestore", id);
-}
-```
-
-- `Dapr.Client` — wraps the sidecar over **gRPC** (HTTP fallback).
-- `Dapr.AspNetCore` — `[Topic]`, `MapSubscribeHandler()`, model binding for subscriptions.
-- Every interaction is **just a typed call** — the sidecar does the heavy lifting.
+In the airport demo, every component is backed by the Redis that `dapr init` provisions.
 
 ---
 
@@ -169,7 +171,7 @@ Out of the box:
 - **Service discovery** — name-based `HttpClient` resolution
 - **Resilience** — sensible retries and timeouts on outbound HTTP
 
-Customize once, every service inherits.
+> Demo: open `Airport.ServiceDefaults/Extensions.cs` and look at the OTel block.
 
 ---
 
@@ -200,42 +202,24 @@ Same name on both sides — Aspire injects the connection details.
 `CommunityToolkit.Aspire.Hosting.Dapr` makes sidecars first-class AppHost resources.
 
 ```csharp
-var stateStore = builder.AddDaprStateStore("statestore");
-var pubsub     = builder.AddDaprPubSub("pubsub");
+DaprSidecarOptions SidecarFor(string appId) => new()
+{
+    AppId = appId,
+    ResourcesPaths = [daprComponentsPath],
+    Config = tracingConfigPath,
+};
 
-builder.AddProject<Projects.OrdersApi>("orders-api")
-       .WithDaprSidecar()
-       .WithReference(stateStore)
-       .WithReference(pubsub);
+builder.AddProject<Projects.Airport_WeatherService>("weather-service")
+       .WithHttpEndpoint(port: 5081, name: "http")
+       .WithDaprSidecar(SidecarFor("weather-service"));
 ```
 
 - **No more `dapr run` scripts** — sidecars start with the app.
-- Components modeled in C#, generated as YAML for `daprd`.
+- Components are pointed at via `ResourcesPaths` (or modeled in C#).
 - Sidecars show up in the **Aspire dashboard** with their own logs and traces.
 - Same definition works for local dev *and* Container Apps deployment.
 
----
-
-# What We're Building Today
-
-```mermaid
-flowchart LR
-    Client([Client]) --> Api["Orders API<br/>(.NET)"]
-    Api -- "service<br/>invocation" --> Worker["Orders Worker<br/>(.NET)"]
-    Api <--> ApiSidecar["Dapr<br/>sidecar"]
-    Worker <--> WorkerSidecar["Dapr<br/>sidecar"]
-    ApiSidecar -- pub/sub --> Broker[(Redis Streams)]
-    WorkerSidecar -- pub/sub --> Broker
-    WorkerSidecar -- state --> State[(Redis)]
-    Api -. OTLP .-> Dashboard["Aspire Dashboard"]
-    Worker -. OTLP .-> Dashboard
-    ApiSidecar -. OTLP .-> Dashboard
-    WorkerSidecar -. OTLP .-> Dashboard
-    AppHost["Aspire AppHost"] === Api
-    AppHost === Worker
-```
-
-> Aspire wires it. Dapr runs it. OpenTelemetry observes it.
+> Demo: this is exactly what `Airport.AppHost/AppHost.cs` does.
 
 ---
 
@@ -271,10 +255,11 @@ What you need:
 builder.Services.AddOpenTelemetry()
     .WithMetrics(m => m.AddAspNetCoreInstrumentation()
                        .AddHttpClientInstrumentation()
-                       .AddRuntimeInstrumentation())
+                       .AddRuntimeInstrumentation()
+                       .AddMeter("Airport"))           // ← our custom meter
     .WithTracing(t => t.AddAspNetCoreInstrumentation()
                        .AddHttpClientInstrumentation()
-                       .AddSource("Dapr.*"));
+                       .AddSource("Airport"));         // ← our custom source
 ```
 
 One request → one trace → every hop visible in the dashboard.
@@ -286,29 +271,23 @@ One request → one trace → every hop visible in the dashboard.
 Defaults describe *how* the system is running. Custom metrics describe *what the business cares about*.
 
 ```csharp
-public class OrderMetrics
+public static class AirportTelemetry
 {
-    private readonly Counter<long> _ordersPlaced;
-    private readonly Histogram<double> _orderTotal;
+    public static readonly Meter Meter = new("Airport");
 
-    public OrderMetrics(IMeterFactory factory)
-    {
-        var meter = factory.Create("Orders");
-        _ordersPlaced = meter.CreateCounter<long>("orders.placed");
-        _orderTotal   = meter.CreateHistogram<double>("orders.total", unit: "EUR");
-    }
+    public static readonly Counter<long> ClearanceDecisions =
+        Meter.CreateCounter<long>("airport.atc.clearance_decisions");
 
-    public void Record(Order o)
-    {
-        _ordersPlaced.Add(1, new KeyValuePair<string, object?>("region", o.Region));
-        _orderTotal.Record(o.Total);
-    }
+    public static readonly Histogram<double> ClearanceDecisionDurationMs =
+        Meter.CreateHistogram<double>("airport.atc.clearance_decision_duration", unit: "ms");
 }
 ```
 
-- Use `IMeterFactory` so tests can isolate meters.
-- Register the meter name in OTel: `.AddMeter("Orders")`.
-- Visible in the Aspire dashboard immediately.
+- One static `Meter` per logical area, shared via `Airport.Contracts`.
+- Register the meter name in OTel: `.AddMeter("Airport")`.
+- Tag each measurement (kind, runway, granted) for slice-and-dice in the dashboard.
+
+> Demo: open `AirportTelemetry.cs` to see the real instruments.
 
 ---
 
@@ -317,19 +296,24 @@ public class OrderMetrics
 One API. Many brokers. CloudEvents on the wire.
 
 ```csharp
-// Publisher
-await dapr.PublishEventAsync("pubsub", "orders.created", order);
+// WeatherService — publisher
+await dapr.PublishEventAsync("pubsub", "weather-updates", snapshot);
 
-// Subscriber (Dapr.AspNetCore)
-app.MapPost("/orders.created",
-    [Topic("pubsub", "orders.created")] (OrderCreated evt) => HandleAsync(evt));
+// AtcService — subscriber (Dapr.AspNetCore)
+app.MapPost("/atc/weather-updates",
+    (WeatherSnapshot snapshot, WeatherWatch watch) =>
+{
+    watch.Latest = snapshot;
+    return Results.Ok();
+})
+.WithTopic("pubsub", "weather-updates");
 ```
 
 - **Decoupled** — publisher doesn't know who subscribes.
 - **Component swap** — Redis Streams locally → Service Bus or Kafka in prod.
 - **Delivery guarantees, dead letters, bulk subscribe** — set on the component.
 
-> Demo: API publishes `orders.created`, Worker reacts and updates state.
+> Demo: pin bad weather, watch ATC's "below minima" flag flip within one tick.
 
 ---
 
@@ -338,18 +322,20 @@ app.MapPost("/orders.created",
 Durable key-value with the same API regardless of backend.
 
 ```csharp
-await dapr.SaveStateAsync("statestore", $"cart:{userId}", cart);
+// AtcService — persist active clearances
+var map = await dapr.GetStateAsync<Dictionary<string, ActiveClearance>>(
+    "statestore", "active-clearances") ?? new();
 
-var (cart, etag) = await dapr.GetStateAndETagAsync<Cart>("statestore", $"cart:{userId}");
+map[request.FlightId] = new ActiveClearance(/* … */);
 
-await dapr.TrySaveStateAsync("statestore", $"cart:{userId}", cart, etag);
+await dapr.SaveStateAsync("statestore", "active-clearances", map);
 ```
 
 - **ETags** for optimistic concurrency, **TTL** for expiry, **bulk** ops for throughput.
 - Components: Redis, Cosmos DB, Postgres, SQL Server, Azure Table Storage, …
 - Some components also support **query** and **transactions**.
 
-> Demo: Worker writes order state; API reads it back through the sidecar.
+> Demo: granted clearances on the `/atc` page are read back from this exact key.
 
 ---
 
@@ -358,8 +344,10 @@ await dapr.TrySaveStateAsync("statestore", $"cart:{userId}", cart, etag);
 Call services by **name** — not by IP or DNS.
 
 ```csharp
-var response = await dapr.InvokeMethodAsync<OrderRequest, OrderResponse>(
-    HttpMethod.Post, "orders-api", "orders", request);
+// FlightOperations workflow — ask the weather service over the sidecar
+using var client = DaprClient.CreateInvokeHttpClient(appId: "weather-service");
+
+var snapshot = await client.GetFromJsonAsync<WeatherSnapshot>("/weather");
 ```
 
 The sidecar handles:
@@ -369,45 +357,44 @@ The sidecar handles:
 - **Retries, timeouts, circuit breakers** via resiliency policies
 - **Distributed tracing** propagation
 
-> Demo: Worker calls back into the Orders API by name — no `HttpClient` base URLs.
+> Demo: every workflow tick produces a `check_weather` span — visible in the dashboard.
 
 ---
 
-# Bonus: Dapr Workflows
+# Bonus: Dapr Workflows + Actors
 
-**Durable, code-first orchestrations** built on the Dapr actors runtime.
+**Durable orchestrations** on top of **per-entity state**.
 
 ```csharp
-public class OrderWorkflow : Workflow<Order, OrderResult>
+public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflowResult>
 {
-    public override async Task<OrderResult> RunAsync(WorkflowContext ctx, Order order)
+    public override async Task<FlightWorkflowResult> RunAsync(
+        WorkflowContext context, FlightWorkflowInput input)
     {
-        await ctx.CallActivityAsync(nameof(ReserveStock), order);
-        var payment = await ctx.CallActivityAsync<PaymentResult>(nameof(ChargeCard), order);
-
-        if (!payment.Succeeded)
-        {
-            await ctx.CallActivityAsync(nameof(ReleaseStock), order);
-            return OrderResult.Failed;
-        }
-
-        await ctx.CallActivityAsync(nameof(ShipOrder), order);
-        return OrderResult.Confirmed;
+        await context.CallActivityAsync(nameof(InitializeAircraftActivity), /*…*/);
+        await context.CallActivityAsync(nameof(TryAcquireGateActivity),     /*…*/);
+        await context.CallActivityAsync(nameof(CheckWeatherActivity),       /*…*/);
+        await context.CallActivityAsync(nameof(RequestClearanceActivity),   /*…*/);
+        await context.WaitForExternalEventAsync<ClearanceResult>("clearance-takeoff");
+        // …cruise…landing clearance…land.
+        return new FlightWorkflowResult(true, "Landed");
     }
 }
 ```
 
-- Survives **process restarts** — state is persisted by Dapr.
-- Patterns: fan-out/fan-in, monitor, external events, compensation.
+- Workflow survives **process restarts** — state is persisted by Dapr.
+- Each flight has a matching **Aircraft actor** that owns its mutable state.
 - Same sidecar, same component model — nothing extra to deploy.
+
+> Demo: schedule a flight, watch the actor's status walk the board live.
 
 ---
 
 # Recap
 
-- **Dapr** — portable building blocks (pub/sub, state, invocation, workflows) behind a sidecar.
+- **Dapr** — portable building blocks (pub/sub, state, invocation, lock, actors, workflows) behind a sidecar.
 - **Aspire** — AppHost + ServiceDefaults + dashboard you'll actually open.
-- **Together** — one `F5` boots services *and* sidecars, OpenTelemetry wired end-to-end.
+- **Together** — one `aspire run` boots services *and* sidecars, OpenTelemetry wired end-to-end.
 - **Observability** is first-class — including the custom metrics that describe your business.
 - **Adopt incrementally** — start with one building block, one workflow, one team.
 
