@@ -99,6 +99,14 @@ a {
     background-color: var(--card);
     border-right: 1px solid var(--border);
     padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-sidebar-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
 }
 
 .app-brand {
