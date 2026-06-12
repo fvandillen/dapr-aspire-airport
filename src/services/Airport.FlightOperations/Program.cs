@@ -144,6 +144,78 @@ flights.MapPost("/seed", async (
     return Results.Ok(scheduled);
 });
 
+// --- Operator-only control endpoints ---------------------------------------
+
+// Short-circuit whatever timer the workflow is currently sitting on (boarding hold,
+// weather hold, cruise legs, clearance backoff after a denial). No effect if the
+// workflow is waiting on a real external event (e.g. a clearance result) - use the
+// /clearance endpoint for that case.
+flights.MapPost("/{flightId}/advance", async (
+    string flightId,
+    DaprWorkflowClient workflows,
+    ILogger<Program> logger) =>
+{
+    logger.LogInformation("Operator advance requested for {FlightId}", flightId);
+    await workflows.RaiseEventAsync(flightId, FlightWorkflow.AdvanceEventName, true);
+    return Results.Ok();
+});
+
+// Terminate the workflow and mark the aircraft as Cancelled so the UI updates immediately.
+flights.MapPost("/{flightId}/cancel", async (
+    string flightId,
+    DaprWorkflowClient workflows,
+    ILogger<Program> logger) =>
+{
+    logger.LogInformation("Operator cancel requested for {FlightId}", flightId);
+    try
+    {
+        var actor = AircraftActorProxy.For(flightId);
+        await actor.UpdateStatusAsync(new StatusUpdate(
+            FlightStatus.Cancelled, Note: "Cancelled by operator"));
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to update actor state during cancel of {FlightId}", flightId);
+    }
+
+    await workflows.TerminateWorkflowAsync(flightId, output: "cancelled by operator");
+    return Results.Ok();
+});
+
+// Force-grant or force-deny the currently-pending clearance, bypassing ATC. Raises the
+// same external event ATC would raise via the clearance-results pub/sub topic.
+flights.MapPost("/{flightId}/clearance", async (
+    string flightId,
+    ForceClearanceRequest body,
+    DaprWorkflowClient workflows,
+    ILogger<Program> logger) =>
+{
+    var eventName = body.Kind switch
+    {
+        ClearanceKind.Takeoff => "clearance-takeoff",
+        ClearanceKind.Landing => "clearance-landing",
+        _ => "clearance-unknown",
+    };
+
+    var actor = AircraftActorProxy.For(flightId);
+    var state = await actor.GetStateAsync();
+
+    var result = new ClearanceResult(
+        FlightId: flightId,
+        Callsign: state.Callsign,
+        Kind: body.Kind,
+        Granted: body.Granted,
+        Runway: body.Granted ? (body.Runway ?? "27R") : "-",
+        Reason: body.Granted ? "Manual clearance by operator" : "Manually denied by operator",
+        DecidedAt: DateTimeOffset.UtcNow);
+
+    logger.LogInformation(
+        "Operator clearance for {FlightId}: {Kind} granted={Granted}", flightId, body.Kind, body.Granted);
+
+    await workflows.RaiseEventAsync(flightId, eventName, result);
+    return Results.Ok(result);
+});
+
 app.Run();
 
 // ---------------------------------------------------------------------------

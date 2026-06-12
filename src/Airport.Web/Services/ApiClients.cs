@@ -63,4 +63,20 @@ public sealed class FlightsApi(HttpClient http)
         return await response.Content.ReadFromJsonAsync<IReadOnlyList<FlightView>>(cancellationToken: ct)
                ?? Array.Empty<FlightView>();
     }
+
+    /// <summary>Short-circuit the timer the workflow is currently sitting on.</summary>
+    public async Task AdvanceAsync(string flightId, CancellationToken ct = default) =>
+        (await http.PostAsync($"/flights/{flightId}/advance", content: null, ct)).EnsureSuccessStatusCode();
+
+    /// <summary>Terminate the workflow and mark the aircraft as cancelled.</summary>
+    public async Task CancelAsync(string flightId, CancellationToken ct = default) =>
+        (await http.PostAsync($"/flights/{flightId}/cancel", content: null, ct)).EnsureSuccessStatusCode();
+
+    /// <summary>Force-grant or force-deny the pending clearance, bypassing ATC.</summary>
+    public async Task ForceClearanceAsync(
+        string flightId, ClearanceKind kind, bool granted, string? runway = null, CancellationToken ct = default) =>
+        (await http.PostAsJsonAsync(
+            $"/flights/{flightId}/clearance",
+            new ForceClearanceRequest(kind, granted, runway),
+            ct)).EnsureSuccessStatusCode();
 }

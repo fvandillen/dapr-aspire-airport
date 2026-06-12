@@ -32,3 +32,9 @@ public sealed record ActiveClearance(
     string Runway,
     DateTimeOffset GrantedAt,
     DateTimeOffset ExpiresAt);
+
+/// <summary>UI -> FlightOperations: force-grant or force-deny the pending clearance for a flight.</summary>
+public sealed record ForceClearanceRequest(
+    ClearanceKind Kind,
+    bool Granted,
+    string? Runway = null);

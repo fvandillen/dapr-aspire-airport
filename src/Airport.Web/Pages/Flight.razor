@@ -1,0 +1,291 @@
+@page "/flight/{FlightId}"
+@inject FlightsApi Flights
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Flight @(_flight?.Callsign ?? FlightId)</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>
+            @if (_flight is not null)
+            {
+                @_flight.Callsign
+                <span class="muted" style="font-weight:400; font-size:1rem; margin-left:0.5rem;">
+                    @_flight.Origin → @_flight.Destination
+                </span>
+            }
+            else
+            {
+                @FlightId
+            }
+        </h1>
+        <p class="muted">Flight id <code>@FlightId</code></p>
+    </div>
+    <div style="display:flex; gap:0.5rem;">
+        <BbButton Variant="ButtonVariant.Ghost" OnClick="@(() => Nav.NavigateTo("/"))">
+            <LucideIcon Name="arrow-left" Size="14" /> Back to board
+        </BbButton>
+        <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync" Disabled="@_busy">
+            <LucideIcon Name="refresh-cw" Size="14" /> Refresh
+        </BbButton>
+    </div>
+</div>
+
+@if (_flight is null)
+{
+    <BbCard>
+        <BbCardContent>
+            <div style="display:flex; align-items:center; gap:0.5rem;" class="muted">
+                <BbSpinner /> Loading flight...
+            </div>
+        </BbCardContent>
+    </BbCard>
+}
+else
+{
+    var f = _flight;
+    var currentStep = StepIndexFor(f.Status);
+    var isTerminal = f.Status is FlightStatus.Landed or FlightStatus.Cancelled;
+
+    <div class="grid-2" style="margin-bottom:1rem;">
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Flight info</BbCardTitle>
+                <BbCardDescription>From the Aircraft actor's state.</BbCardDescription>
+            </BbCardHeader>
+            <BbCardContent>
+                <div style="display:grid; grid-template-columns: max-content 1fr; gap:0.4rem 1.25rem; font-size:0.95rem;">
+                    <span class="muted">Aircraft</span><span>@f.AircraftType</span>
+                    <span class="muted">Gate</span>    <span>@f.Gate</span>
+                    <span class="muted">Runway</span>  <span>@(f.Runway ?? "—")</span>
+                    <span class="muted">Scheduled</span><span>@f.ScheduledDeparture.ToLocalTime().ToString("HH:mm")</span>
+                    <span class="muted">Departed</span> <span>@(f.ActualDeparture?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span>
+                    <span class="muted">Arrived</span>  <span>@(f.ActualArrival?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</span>
+                    <span class="muted">Status</span>
+                    <span><span class="badge @StatusClass(f.Status)">@StatusLabel(f.Status)</span></span>
+                    @if (!string.IsNullOrWhiteSpace(f.Note))
+                    {
+                        <span class="muted">Note</span><span>@f.Note</span>
+                    }
+                </div>
+            </BbCardContent>
+        </BbCard>
+
+        <BbCard>
+            <BbCardHeader>
+                <BbCardTitle>Operator controls</BbCardTitle>
+                <BbCardDescription>Drive the workflow manually for the demo.</BbCardDescription>
+            </BbCardHeader>
+            <BbCardContent>
+                <div style="display:flex; flex-direction:column; gap:0.6rem;">
+
+                    @{
+                        var canAdvance = !isTerminal && CanAdvance(f.Status);
+                    }
+                    <BbButton Variant="ButtonVariant.Default"
+                              OnClick="AdvanceAsync"
+                              Disabled="@(_busy || !canAdvance)">
+                        <LucideIcon Name="fast-forward" Size="14" />
+                        Skip wait (advance)
+                    </BbButton>
+                    <span class="muted" style="font-size:0.8rem; margin-top:-0.4rem;">
+                        Short-circuits the boarding / cruise / backoff timer.
+                    </span>
+
+                    @if (f.Status is FlightStatus.AwaitingTakeoffClearance)
+                    {
+                        <div style="display:flex; gap:0.4rem;">
+                            <BbButton Variant="ButtonVariant.Default"
+                                      OnClick="@(() => ForceClearance(ClearanceKind.Takeoff, true))"
+                                      Disabled="@_busy">
+                                <LucideIcon Name="check" Size="14" /> Force grant T/O
+                            </BbButton>
+                            <BbButton Variant="ButtonVariant.Outline"
+                                      OnClick="@(() => ForceClearance(ClearanceKind.Takeoff, false))"
+                                      Disabled="@_busy">
+                                <LucideIcon Name="x" Size="14" /> Force deny T/O
+                            </BbButton>
+                        </div>
+                    }
+
+                    @if (f.Status is FlightStatus.AwaitingLandingClearance)
+                    {
+                        <div style="display:flex; gap:0.4rem;">
+                            <BbButton Variant="ButtonVariant.Default"
+                                      OnClick="@(() => ForceClearance(ClearanceKind.Landing, true))"
+                                      Disabled="@_busy">
+                                <LucideIcon Name="check" Size="14" /> Force grant LDG
+                            </BbButton>
+                            <BbButton Variant="ButtonVariant.Outline"
+                                      OnClick="@(() => ForceClearance(ClearanceKind.Landing, false))"
+                                      Disabled="@_busy">
+                                <LucideIcon Name="x" Size="14" /> Force deny LDG
+                            </BbButton>
+                        </div>
+                    }
+
+                    <div style="height:0.25rem;"></div>
+
+                    <BbButton Variant="ButtonVariant.Destructive"
+                              OnClick="CancelAsync"
+                              Disabled="@(_busy || isTerminal)">
+                        <LucideIcon Name="ban" Size="14" /> Cancel flight
+                    </BbButton>
+                </div>
+            </BbCardContent>
+        </BbCard>
+    </div>
+
+    <BbCard>
+        <BbCardHeader>
+            <BbCardTitle>Workflow progress</BbCardTitle>
+            <BbCardDescription>
+                Status is sourced from the Aircraft actor's state; the workflow updates it at each transition.
+            </BbCardDescription>
+        </BbCardHeader>
+        <BbCardContent>
+            <ol class="timeline">
+                @for (var i = 0; i < _steps.Length; i++)
+                {
+                    var step = _steps[i];
+                    var stepClass = "timeline-step";
+                    if (f.Status is FlightStatus.Cancelled && i == currentStep)
+                    {
+                        stepClass += " is-cancelled";
+                    }
+                    else if (i < currentStep || (isTerminal && f.Status is FlightStatus.Landed))
+                    {
+                        stepClass += " is-done";
+                    }
+                    else if (i == currentStep)
+                    {
+                        stepClass += " is-active";
+                    }
+
+                    <li class="@stepClass">
+                        <div class="timeline-marker">
+                            <LucideIcon Name="@step.Icon" Size="14" />
+                        </div>
+                        <div class="timeline-content">
+                            <span class="timeline-title">@step.Title</span>
+                            <span class="timeline-meta">@step.Description</span>
+                            @if (i == currentStep && !string.IsNullOrWhiteSpace(f.Note))
+                            {
+                                <span class="timeline-meta">@f.Note</span>
+                            }
+                        </div>
+                    </li>
+                }
+            </ol>
+        </BbCardContent>
+    </BbCard>
+}
+
+@code {
+    [Parameter] public string FlightId { get; set; } = "";
+
+    private FlightView? _flight;
+    private System.Threading.Timer? _poller;
+    private bool _busy;
+    private string? _lastError;
+
+    private readonly Step[] _steps =
+    {
+        new("Scheduled",            "Workflow scheduled, aircraft actor created.",        "calendar-plus"),
+        new("Boarding & pushback",  "Boarding passengers, pushing back from the gate.",   "users"),
+        new("Awaiting takeoff",     "Requesting takeoff clearance from ATC.",             "radio"),
+        new("Departed",             "Cleared, taxiing and rolling for takeoff.",          "plane-takeoff"),
+        new("Cruising",             "En-route at cruise altitude.",                       "plane"),
+        new("Awaiting landing",     "Requesting landing clearance from ATC.",             "radio-tower"),
+        new("Landed",               "Touched down on the runway. Flight complete.",       "plane-landing"),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _poller = new System.Threading.Timer(async _ =>
+        {
+            try { await InvokeAsync(LoadAsync); } catch { }
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload when the user navigates between flights without leaving the page.
+        if (_flight is not null && _flight.FlightId != FlightId)
+        {
+            _flight = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _flight = await Flights.GetAsync(FlightId);
+            StateHasChanged();
+        }
+        catch { /* retry next tick */ }
+    }
+
+    private async Task AdvanceAsync()              => await RunAsync(() => Flights.AdvanceAsync(FlightId));
+    private async Task CancelAsync()               => await RunAsync(() => Flights.CancelAsync(FlightId));
+    private async Task ForceClearance(ClearanceKind kind, bool granted) =>
+        await RunAsync(() => Flights.ForceClearanceAsync(FlightId, kind, granted));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _lastError = null;
+        try { await action(); await LoadAsync(); }
+        catch (Exception ex) { _lastError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    public void Dispose() => _poller?.Dispose();
+
+    // --- mapping helpers ---
+
+    private static int StepIndexFor(FlightStatus status) => status switch
+    {
+        FlightStatus.Scheduled                => 0,
+        FlightStatus.BoardingPushback         => 1,
+        FlightStatus.AwaitingTakeoffClearance => 2,
+        FlightStatus.Departed                 => 3,
+        FlightStatus.Cruising                 => 4,
+        FlightStatus.AwaitingLandingClearance => 5,
+        FlightStatus.Landed                   => 6,
+        FlightStatus.Cancelled                => 1, // freeze the marker wherever we cancelled
+        _ => 0,
+    };
+
+    private static bool CanAdvance(FlightStatus s) => s
+        is FlightStatus.BoardingPushback
+        or FlightStatus.Departed
+        or FlightStatus.Cruising;
+
+    private static string StatusClass(FlightStatus s) => s switch
+    {
+        FlightStatus.Scheduled                  => "status-scheduled",
+        FlightStatus.BoardingPushback           => "status-boarding",
+        FlightStatus.AwaitingTakeoffClearance   => "status-cleared",
+        FlightStatus.Departed                   => "status-departed",
+        FlightStatus.Cruising                   => "status-cruising",
+        FlightStatus.AwaitingLandingClearance   => "status-landing",
+        FlightStatus.Landed                     => "status-landed",
+        FlightStatus.Cancelled                  => "status-cancelled",
+        _ => "status-scheduled",
+    };
+
+    private static string StatusLabel(FlightStatus s) => s switch
+    {
+        FlightStatus.BoardingPushback           => "BOARDING",
+        FlightStatus.AwaitingTakeoffClearance   => "AWAIT T/O",
+        FlightStatus.AwaitingLandingClearance   => "AWAIT LDG",
+        _ => s.ToString().ToUpperInvariant(),
+    };
+
+    private sealed record Step(string Title, string Description, string Icon);
+}

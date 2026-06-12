@@ -1,5 +1,6 @@
 ﻿@page "/"
 @inject FlightsApi Flights
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>AMS Departures</PageTitle>
@@ -74,7 +75,9 @@
             {
                 @foreach (var f in _flights)
                 {
-                    <tr class="@RowClass(f.Status)">
+                    <tr class="board-row @RowClass(f.Status)"
+                        @onclick="@(() => Nav.NavigateTo($"/flight/{f.FlightId}"))"
+                        title="Open flight details">
                         <td>@f.ScheduledDeparture.ToLocalTime().ToString("HH:mm")</td>
                         <td><strong>@f.Callsign</strong></td>
                         <td>@f.Destination</td>

@@ -14,11 +14,20 @@ public sealed record FlightWorkflowResult(bool Completed, string Summary);
 /// departed -> cruise -> landing clearance -> landed.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The workflow itself does NO I/O. Every external interaction is wrapped in an
 /// activity so the run can be deterministically replayed by the Dapr workflow engine.
+/// </para>
+/// <para>
+/// Every wait either races a timer against an <c>advance</c> external event or is itself
+/// an external event wait, so the operator can short-circuit the flow from the UI.
+/// </para>
 /// </remarks>
 public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflowResult>
 {
+    /// <summary>External event name the API raises to skip the current timer.</summary>
+    public const string AdvanceEventName = "advance";
+
     public override async Task<FlightWorkflowResult> RunAsync(
         WorkflowContext context,
         FlightWorkflowInput input)
@@ -32,7 +41,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
                 context.CurrentUtcDateTime));
 
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.BoardingPushback));
-        await context.CreateTimer(TimeSpan.FromSeconds(60));
+        await WaitOrAdvance(context, TimeSpan.FromSeconds(60));
 
         // --- 2. Weather check, with a retry loop --------------------------
         WeatherSnapshot weather;
@@ -52,10 +61,12 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
             await SetStatus(context, input.FlightId, new StatusUpdate(
                 FlightStatus.BoardingPushback, Note: $"Weather hold: {weather.Condition}"));
-            await context.CreateTimer(TimeSpan.FromSeconds(60));
+            await WaitOrAdvance(context, TimeSpan.FromSeconds(60));
         }
 
         // --- 3. Takeoff clearance request/wait loop -----------------------
+        await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.AwaitingTakeoffClearance));
+
         var takeoff = await RequestClearanceWithRetry(
             context, input.FlightId, input.Callsign, ClearanceKind.Takeoff, eventName: "clearance-takeoff");
 
@@ -72,9 +83,9 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             ActualDeparture: context.CurrentUtcDateTime));
 
         // --- 4. Cruise (compressed for demo) ------------------------------
-        await context.CreateTimer(TimeSpan.FromSeconds(80));
+        await WaitOrAdvance(context, TimeSpan.FromSeconds(80));
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.Cruising));
-        await context.CreateTimer(TimeSpan.FromSeconds(140));
+        await WaitOrAdvance(context, TimeSpan.FromSeconds(140));
 
         // --- 5. Landing clearance request/wait loop -----------------------
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.AwaitingLandingClearance));
@@ -101,6 +112,23 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         context.CallActivityAsync<bool>(
             nameof(UpdateAircraftStatusActivity),
             new UpdateAircraftStatusActivity.Input(flightId, update));
+
+    /// <summary>
+    /// Waits up to <paramref name="timeout"/>, but returns immediately if the workflow
+    /// receives an <c>advance</c> external event. Lets the demo operator short-circuit
+    /// any boarding/cruise/backoff hold from the UI.
+    /// </summary>
+    private static async Task WaitOrAdvance(WorkflowContext context, TimeSpan timeout)
+    {
+        try
+        {
+            await context.WaitForExternalEventAsync<bool>(AdvanceEventName, timeout);
+        }
+        catch (TaskCanceledException)
+        {
+            // Timer expired naturally — the wait is over.
+        }
+    }
 
     /// <summary>
     /// Asks ATC for clearance, waits for the <paramref name="eventName"/> external event,
@@ -134,8 +162,8 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
             if (result.Granted) return result;
 
-            // Denied: short backoff before retrying.
-            await context.CreateTimer(TimeSpan.FromSeconds(30));
+            // Denied: short backoff before retrying (skippable via the advance event).
+            await WaitOrAdvance(context, TimeSpan.FromSeconds(30));
         }
         return null;
     }
