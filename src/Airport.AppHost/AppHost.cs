@@ -8,11 +8,18 @@ var builder = DistributedApplication.CreateBuilder(args);
 var daprComponentsPath = Path.GetFullPath(
     Path.Combine(builder.AppHostDirectory, "..", "dapr", "components"));
 
+// Generate a Dapr Configuration that exports tracing to the Aspire dashboard's
+// OTLP receiver. We bake the URL into the YAML at startup because Dapr's
+// Configuration spec (unlike Component metadata) does not support
+// `{env:VAR}` substitution.
+var tracingConfigPath = TryGenerateTracingConfig(builder);
+
 DaprSidecarOptions SidecarFor(string appId) => new()
 {
     AppId = appId,
     ResourcesPaths = [daprComponentsPath],
-    LogLevel = "info"
+    Config = tracingConfigPath,
+    LogLevel = "info",
 };
 
 // --- Backend services (each with its own Dapr sidecar) -----------------------
@@ -44,3 +51,41 @@ builder.AddProject<Projects.Airport_Web>("web")
     .WaitFor(flightOps);
 
 builder.Build().Run();
+
+// ---------------------------------------------------------------------------
+
+static string? TryGenerateTracingConfig(IDistributedApplicationBuilder builder)
+{
+    // Aspire pins the dashboard's OTLP receiver URL in launchSettings.json
+    // via ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL (older builds: DOTNET_DASHBOARD_*).
+    var otlpUrl = builder.Configuration["ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"]
+                  ?? builder.Configuration["DOTNET_DASHBOARD_OTLP_ENDPOINT_URL"];
+    if (string.IsNullOrWhiteSpace(otlpUrl) ||
+        !Uri.TryCreate(otlpUrl, UriKind.Absolute, out var uri))
+    {
+        return null;
+    }
+
+    var endpoint = $"{uri.Host}:{uri.Port}";
+    var isSecure = uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "true" : "false";
+
+    var outDir = Path.Combine(builder.AppHostDirectory, "obj", "dapr");
+    Directory.CreateDirectory(outDir);
+    var path = Path.Combine(outDir, "tracing.yaml");
+
+    File.WriteAllText(path, $"""
+        apiVersion: dapr.io/v1alpha1
+        kind: Configuration
+        metadata:
+          name: tracing
+        spec:
+          tracing:
+            samplingRate: "1"
+            otel:
+              endpointAddress: "{endpoint}"
+              isSecure: {isSecure}
+              protocol: grpc
+        """);
+
+    return path;
+}
