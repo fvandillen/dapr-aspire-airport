@@ -8,6 +8,24 @@ public sealed class WeatherApi(HttpClient http)
 {
     public async Task<WeatherSnapshot?> GetCurrentAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<WeatherSnapshot>("/weather", ct);
+
+    public async Task<WeatherStatus?> GetStatusAsync(CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<WeatherStatus>("/weather/status", ct);
+
+    public async Task PauseAsync(CancellationToken ct = default) =>
+        (await http.PostAsync("/weather/pause", content: null, ct)).EnsureSuccessStatusCode();
+
+    public async Task ResumeAsync(CancellationToken ct = default) =>
+        (await http.PostAsync("/weather/resume", content: null, ct)).EnsureSuccessStatusCode();
+
+    public async Task ApplyPresetAsync(string name, CancellationToken ct = default) =>
+        (await http.PostAsync($"/weather/preset/{name}", content: null, ct)).EnsureSuccessStatusCode();
+
+    public async Task ClearOverrideAsync(CancellationToken ct = default) =>
+        (await http.DeleteAsync("/weather/override", ct)).EnsureSuccessStatusCode();
+
+    public async Task SetOverrideAsync(WeatherSnapshot snapshot, CancellationToken ct = default) =>
+        (await http.PutAsJsonAsync("/weather/override", snapshot, ct)).EnsureSuccessStatusCode();
 }
 
 /// <summary>Talks to the AtcService HTTP API.</summary>

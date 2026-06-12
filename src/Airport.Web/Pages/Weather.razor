@@ -7,12 +7,65 @@
 <div class="page-header">
     <div>
         <h1>Weather</h1>
-        <p>Snapshots published by the WeatherService over Dapr pub/sub.</p>
+        <p>
+            Snapshots published by the WeatherService over Dapr pub/sub.
+            @if (_status is not null)
+            {
+                <span class="muted"> · publishes every @_status.PublishIntervalSeconds s</span>
+            }
+        </p>
     </div>
-    <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync">
-        <LucideIcon Name="refresh-cw" Size="14" /> Refresh
-    </BbButton>
+    <div style="display:flex; gap:0.5rem;">
+        <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync" Disabled="@_busy">
+            <LucideIcon Name="refresh-cw" Size="14" /> Refresh
+        </BbButton>
+        @if (_status?.Paused == true)
+        {
+            <BbButton Variant="ButtonVariant.Default" OnClick="ResumeAsync" Disabled="@_busy">
+                <LucideIcon Name="play" Size="14" /> Resume publishing
+            </BbButton>
+        }
+        else
+        {
+            <BbButton Variant="ButtonVariant.Outline" OnClick="PauseAsync" Disabled="@_busy">
+                <LucideIcon Name="pause" Size="14" /> Pause publishing
+            </BbButton>
+        }
+    </div>
 </div>
+
+<BbCard>
+    <BbCardHeader>
+        <BbCardTitle>Override the next snapshot</BbCardTitle>
+        <BbCardDescription>
+            Pick a preset to pin the published weather; ATC will see this on the next publish tick.
+            @if (_status?.OverrideActive == true)
+            {
+                <span> Currently overriding with <strong>@(_status.PresetName ?? "custom")</strong>.</span>
+            }
+        </BbCardDescription>
+    </BbCardHeader>
+    <BbCardContent>
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+            @foreach (var preset in _presets)
+            {
+                var isActive = _status?.PresetName == preset.Id;
+                <BbButton Variant="@(isActive ? ButtonVariant.Default : ButtonVariant.Outline)"
+                          OnClick="@(() => ApplyPresetAsync(preset.Id))"
+                          Disabled="@_busy">
+                    <LucideIcon Name="@preset.Icon" Size="14" /> @preset.Label
+                </BbButton>
+            }
+            <BbButton Variant="ButtonVariant.Ghost"
+                      OnClick="ClearOverrideAsync"
+                      Disabled="@(_busy || _status?.OverrideActive != true)">
+                <LucideIcon Name="x" Size="14" /> Clear override
+            </BbButton>
+        </div>
+    </BbCardContent>
+</BbCard>
+
+<div style="margin-top:1rem;"></div>
 
 @if (_snapshot is null)
 {
@@ -99,12 +152,28 @@ else
 
     <p class="muted" style="margin-top: 1rem;">
         Last observed @s.ObservedAt.ToLocalTime().ToString("HH:mm:ss")
+        @if (_status?.Paused == true)
+        {
+            <BbBadge Variant="BadgeVariant.Secondary" Class="ml-2">paused</BbBadge>
+        }
     </p>
 }
 
 @code {
     private WeatherSnapshot? _snapshot;
+    private WeatherStatus? _status;
     private System.Threading.Timer? _poller;
+    private bool _busy;
+
+    private readonly Preset[] _presets =
+    {
+        new("cavok",         "CAVOK",         "sun"),
+        new("lightrain",     "Light rain",    "cloud-rain"),
+        new("windy",         "Gusty winds",   "wind"),
+        new("foggy",         "Fog",           "cloud-fog"),
+        new("thunderstorms", "Thunderstorms", "cloud-lightning"),
+        new("snow",          "Snow",          "snowflake"),
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,11 +188,27 @@ else
     {
         try
         {
-            _snapshot = await Wx.GetCurrentAsync();
+            _status = await Wx.GetStatusAsync();
+            _snapshot = _status?.Current;
             StateHasChanged();
         }
         catch { /* retry next tick */ }
     }
 
+    private async Task PauseAsync()        => await RunAsync(() => Wx.PauseAsync());
+    private async Task ResumeAsync()       => await RunAsync(() => Wx.ResumeAsync());
+    private async Task ClearOverrideAsync() => await RunAsync(() => Wx.ClearOverrideAsync());
+    private async Task ApplyPresetAsync(string preset) => await RunAsync(() => Wx.ApplyPresetAsync(preset));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        try { await action(); await LoadAsync(); }
+        catch { /* swallow for demo */ }
+        finally { _busy = false; }
+    }
+
     public void Dispose() => _poller?.Dispose();
+
+    private sealed record Preset(string Id, string Label, string Icon);
 }

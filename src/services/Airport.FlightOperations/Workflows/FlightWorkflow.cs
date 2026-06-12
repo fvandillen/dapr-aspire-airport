@@ -32,7 +32,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
                 context.CurrentUtcDateTime));
 
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.BoardingPushback));
-        await context.CreateTimer(TimeSpan.FromSeconds(6));
+        await context.CreateTimer(TimeSpan.FromSeconds(60));
 
         // --- 2. Weather check, with a retry loop --------------------------
         WeatherSnapshot weather;
@@ -52,7 +52,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 
             await SetStatus(context, input.FlightId, new StatusUpdate(
                 FlightStatus.BoardingPushback, Note: $"Weather hold: {weather.Condition}"));
-            await context.CreateTimer(TimeSpan.FromSeconds(6));
+            await context.CreateTimer(TimeSpan.FromSeconds(60));
         }
 
         // --- 3. Takeoff clearance request/wait loop -----------------------
@@ -72,9 +72,9 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             ActualDeparture: context.CurrentUtcDateTime));
 
         // --- 4. Cruise (compressed for demo) ------------------------------
-        await context.CreateTimer(TimeSpan.FromSeconds(8));
+        await context.CreateTimer(TimeSpan.FromSeconds(80));
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.Cruising));
-        await context.CreateTimer(TimeSpan.FromSeconds(14));
+        await context.CreateTimer(TimeSpan.FromSeconds(140));
 
         // --- 5. Landing clearance request/wait loop -----------------------
         await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.AwaitingLandingClearance));
@@ -124,7 +124,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             try
             {
                 result = await context.WaitForExternalEventAsync<ClearanceResult>(
-                    eventName, TimeSpan.FromSeconds(45));
+                    eventName, TimeSpan.FromSeconds(90));
             }
             catch (TaskCanceledException)
             {
@@ -135,7 +135,7 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             if (result.Granted) return result;
 
             // Denied: short backoff before retrying.
-            await context.CreateTimer(TimeSpan.FromSeconds(5));
+            await context.CreateTimer(TimeSpan.FromSeconds(30));
         }
         return null;
     }
