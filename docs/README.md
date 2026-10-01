@@ -14,8 +14,8 @@ The Blazor WASM frontend (`Airport.Web`) calls three backend services; each back
 
 Shared Dapr components (Redis-backed, see [src/dapr/components](../src/dapr/components)):
 
-- `pubsub` — pub/sub topics: `weather-updates`, `clearance-requests`, `clearance-results`
-- `statestore` — Aircraft actor state, flight index, active-clearances map, FlightOperations' `latest-weather` snapshot
+- `pubsub` — pub/sub topics: `weather-updates`, `clearance-requests`, `clearance-results`, `airport-reset-requests`, `airport-reset-completed`
+- `statestore` — Aircraft actor state, flight index, active-clearances map, FlightOperations' `latest-weather` snapshot, ATC's `last-airport-reset` replay cutoff
 - `lockstore` — distributed lock per gate (one boarding flight at a time)
 
 ## Page → docs map
@@ -23,7 +23,7 @@ Shared Dapr components (Redis-backed, see [src/dapr/components](../src/dapr/comp
 | Route | Page | Doc |
 | --- | --- | --- |
 | `/` | Live traffic + 3D airport | [home.md](pages/home.md) |
-| `/operations` | Schedule a new flight | [operations.md](pages/operations.md) |
+| `/operations` | Schedule a new flight / clear airport state | [operations.md](pages/operations.md) |
 | `/flight/{id}` | Flight detail + operator controls | [pages/flight.md](pages/flight.md) |
 | `/atc` | ATC tower view | [pages/atc.md](pages/atc.md) |
 | `/weather` | Weather control panel | [pages/weather.md](pages/weather.md) |
@@ -98,6 +98,8 @@ The workflow uses durable custom status `waiting-for-weather` while reading/wait
 
 Existing workflows already in `FAILED` state are not restarted by publishing weather. Cancel/reschedule those flights after updating the demo; do not flush the shared Redis database, which may hold other applications' state.
 
+To start with an empty airport, use **Clear airport state** on Operations and confirm **Yes, clear everything**. This terminates and purges flight workflows, removes aircraft state, flights and clearances, releases gates/runways and clears cached weather. `AirportResetWorkflow` publishes `airport-reset-requests`; ATC clears its own state and publishes `airport-reset-completed`, which raises the reset workflow's `atc-reset-completed` external event. The button reports success after this acknowledgement, then purges the reset workflow. No backend-to-backend HTTP calls or Redis database flush are needed. ATC retains a durable `last-airport-reset` cutoff to reject pre-reset clearance messages, and duplicate reset events do not clear newer data. Live weather can repopulate its cache on the next publication; publisher pause/preset settings remain unchanged.
+
 ## Cross-cutting
 
 - **Observability**: every service uses `Airport.ServiceDefaults` (OpenTelemetry traces + metrics) and registers `AirportTelemetry.Source` / `AirportTelemetry.Meter`. The AppHost generates a Dapr tracing config so sidecar spans land in the Aspire dashboard alongside app spans. See [src/Airport.Contracts/AirportTelemetry.cs](../src/Airport.Contracts/AirportTelemetry.cs).
@@ -114,3 +116,16 @@ AIRPORT_WEATHER_INTEGRATION=1 AIRPORT_FLIGHT_DAPR_URL=http://localhost:<flight-o
 ```
 
 Uses Node's built-in test runner (no additional packages). The opt-in scenarios temporarily control weather and clear only the `latest-weather` snapshot to exercise missing-weather behavior. They create diagnostic flights, cover duplicates/out-of-order events, immediate wake-up, cached weather, manual advancement, cancellation/gate release, and landing, then remove their own flight state and restore the original weather controls. Existing flight history and unrelated Redis data are retained.
+
+## Airport reset integration scenario
+
+On an **isolated, empty local demo** (this test clears all airport flights and clearances), run from `src`:
+
+```sh
+AIRPORT_RESET_INTEGRATION=1 \
+  AIRPORT_FLIGHT_DAPR_URL=http://localhost:<flight-ops-sidecar-port> \
+  AIRPORT_TOWER_DAPR_URL=http://localhost:<atc-service-sidecar-port> \
+  node --test tests/state-reset.test.mjs
+```
+
+The opt-in scenario covers active/cancelled/pending flights, waiting for a gate, unindexed workflows, workflow/actor deletion, late clearance messages, repeat/duplicate resets, unrelated state retention, reusing gates/runways and the pub/sub → workflow external-event round trips for takeoff and landing. Run without the weather publisher to keep the weather cache empty during assertions. `AIRPORT_FLIGHTS_URL` and `AIRPORT_TOWER_URL` optionally override the default HTTP ports.

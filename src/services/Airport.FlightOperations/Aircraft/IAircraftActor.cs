@@ -14,6 +14,8 @@ public interface IAircraftActor : IActor
     Task UpdateStatusAsync(StatusUpdate update);
 
     Task<AircraftState> GetStateAsync();
+
+    Task ClearStateAsync();
 }
 
 /// <summary>One-time initialization payload, sent by the workflow when a flight is scheduled.</summary>

@@ -29,7 +29,7 @@ The UI filters expired entries as well. Stale/unavailable feeds are identified e
 
 ## Where the data comes from
 
-ATC has **no inbound HTTP path** for writes; it only reacts to pub/sub:
+ATC decisions and airport resets react to pub/sub; no synchronous backend-to-backend HTTP calls are needed.
 
 ```mermaid
 flowchart LR
@@ -42,7 +42,10 @@ flowchart LR
 Subscriber handlers in [services/Airport.AtcService/Program.cs](../../src/services/Airport.AtcService/Program.cs):
 
 - `POST /atc/weather-updates` → updates `WeatherWatch.Latest` only for a newer `ObservedAt` (subscribes to `weather-updates`). Duplicate/out-of-order delivery cannot revert the tower to older conditions.
-- `POST /atc/clearance-requests` → makes a decision, persists it in `active-clearances`, publishes the result on `clearance-results` (subscribes to `clearance-requests`).
+- `POST /atc/clearance-requests` → makes a decision, persists it in `active-clearances`, and publishes the result on `clearance-results` (subscribes to `clearance-requests`). The persisted reset cutoff rejects requests with `RequestedAt` at/before the last reset without reserving a runway or writing a clearance. FlightOperations raises the corresponding takeoff/landing external event on the flight workflow.
+- `POST /atc/airport-reset` → subscribes to `airport-reset-requests`; atomically deletes `active-clearances` and stores the reset cutoff in `last-airport-reset`, then frees runway reservations and clears tower weather. Publishes `airport-reset-completed` with the reset workflow id, allowing FlightOperations to raise its completion event. Duplicate/older reset messages only repeat the acknowledgement; they do not clear new state.
+
+Clearance handling and reset share a gate so an in-flight decision cannot restore stale clearances after reset.
 
 ## Decision logic
 
@@ -54,8 +57,10 @@ In `POST /atc/clearance-requests`:
 
 ## Dapr building blocks touched
 
-- **Pub/sub** — two subscriptions (`weather-updates`, `clearance-requests`) and one publish (`clearance-results`).
-- **State store** — `active-clearances` map (read by this page, written by the request handler).
+- **Pub/sub** — subscriptions: `weather-updates`, `clearance-requests`, `airport-reset-requests`; publishes: `clearance-results`, `airport-reset-completed`.
+- **State store** — `active-clearances` map and the durable `last-airport-reset` replay cutoff. The cutoff remains after a reset so late clearance messages cannot restore old state.
+
+The tower panel only reads HTTP views; service coordination uses events, not Dapr service invocation or Aspire-discovered peer HTTP calls.
 
 FlightOperations independently consumes `weather-updates` to wake its weather holds. ATC still receives and evaluates its own subscription; no WeatherService HTTP invocation is needed.
 

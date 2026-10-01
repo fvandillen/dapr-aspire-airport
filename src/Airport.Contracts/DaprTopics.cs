@@ -23,4 +23,8 @@ public static class DaprTopics
 
     /// <summary>Clearance decisions (granted / denied) published by ATC.</summary>
     public const string ClearanceResults = "clearance-results";
+
+    public const string AirportResetRequests = "airport-reset-requests";
+
+    public const string AirportResetCompleted = "airport-reset-completed";
 }

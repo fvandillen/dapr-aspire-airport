@@ -42,6 +42,19 @@ public sealed class AtcApi(HttpClient http)
 /// <summary>Talks to the FlightOperations HTTP API.</summary>
 public sealed class FlightsApi(HttpClient http)
 {
+    public async Task ClearStateAsync(CancellationToken ct = default)
+    {
+        using var response = await http.DeleteAsync("/flights", ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ResetProblem>(cancellationToken: ct);
+            throw new HttpRequestException(problem?.Detail ?? "Airport reset failed. Retry to finish cleanup.",
+                inner: null, statusCode: response.StatusCode);
+        }
+    }
+
+    private sealed record ResetProblem(string? Detail);
+
     public async Task<IReadOnlyList<FlightView>> GetAllAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<IReadOnlyList<FlightView>>("/flights", ct)
         ?? Array.Empty<FlightView>();

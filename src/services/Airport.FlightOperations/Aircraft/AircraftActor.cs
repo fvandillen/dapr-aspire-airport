@@ -55,4 +55,10 @@ public sealed class AircraftActor(ActorHost host) : Actor(host), IAircraftActor
         var current = await StateManager.TryGetStateAsync<AircraftState>(StateKey);
         return current.HasValue ? current.Value : new AircraftState { FlightId = Id.GetId() };
     }
+
+    public async Task ClearStateAsync()
+    {
+        await StateManager.TryRemoveStateAsync(StateKey);
+        Logger.LogInformation("Cleared aircraft state for {FlightId}", Id);
+    }
 }

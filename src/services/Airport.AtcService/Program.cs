@@ -1,4 +1,5 @@
 using Airport.Contracts;
+using System.Text.Json;
 using Dapr;
 using Dapr.Client;
 
@@ -9,6 +10,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddDaprClient();
 builder.Services.AddSingleton<RunwayBoard>();
 builder.Services.AddSingleton<WeatherWatch>();
+builder.Services.AddSingleton<AtcStateGate>();
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .AllowAnyOrigin()
@@ -30,11 +32,13 @@ app.UseCloudEvents();
 app.MapSubscribeHandler();
 
 const string ActiveClearancesKey = "active-clearances";
+const string LastResetKey = "last-airport-reset";
 
 // --- Pub/sub subscriber: weather updates -----------------------------------
 app.MapPost("/atc/weather-updates",
-    (WeatherSnapshot snapshot, WeatherWatch watch, ILogger<Program> logger) =>
+    async (WeatherSnapshot snapshot, WeatherWatch watch, AtcStateGate gate, ILogger<Program> logger) =>
 {
+    using var lease = await gate.EnterAsync();
     if (!watch.Observe(snapshot))
     {
         logger.LogDebug("Ignoring duplicate or older weather snapshot from {ObservedAt}", snapshot.ObservedAt);
@@ -52,8 +56,18 @@ app.MapPost("/atc/clearance-requests", async (
     DaprClient dapr,
     RunwayBoard runways,
     WeatherWatch watch,
-    ILogger<Program> logger) =>
+    AtcStateGate gate,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
 {
+    using var lease = await gate.EnterAsync(cancellationToken);
+    var lastReset = await dapr.GetStateAsync<AirportResetRequest>(DaprTopics.StateStoreName, LastResetKey,
+        cancellationToken: cancellationToken);
+    if (lastReset is not null && request.RequestedAt <= lastReset.ResetAt)
+    {
+        logger.LogInformation("Dropping pre-reset clearance request for flight {FlightId}", request.FlightId);
+        return Results.Ok();
+    }
     using var span = AirportTelemetry.Source.StartActivity(
         "atc.decide_clearance",
         System.Diagnostics.ActivityKind.Consumer,
@@ -137,7 +151,32 @@ app.MapPost("/atc/clearance-requests", async (
 })
 .WithTopic(DaprTopics.PubSubName, DaprTopics.ClearanceRequests);
 
-// --- HTTP API (read-only views for the frontend) ---------------------------
+// --- Pub/sub subscriber: reset airport state and acknowledge completion ----
+app.MapPost("/atc/airport-reset", async (
+    AirportResetRequest request, DaprClient dapr, RunwayBoard runways,
+    WeatherWatch watch, AtcStateGate gate, ILogger<Program> logger) =>
+{
+    using var lease = await gate.EnterAsync();
+    var lastReset = await dapr.GetStateAsync<AirportResetRequest>(DaprTopics.StateStoreName, LastResetKey);
+    if (lastReset is null || request.ResetAt > lastReset.ResetAt)
+    {
+        // Commit the replay cutoff and clearance deletion together; redelivery must not clear new flights.
+        await dapr.ExecuteStateTransactionAsync(DaprTopics.StateStoreName,
+        [
+            new StateTransactionRequest(LastResetKey, JsonSerializer.SerializeToUtf8Bytes(request), StateOperationType.Upsert),
+            new StateTransactionRequest(ActiveClearancesKey, Array.Empty<byte>(), StateOperationType.Delete),
+        ]);
+        runways.Clear();
+        watch.Clear();
+        logger.LogInformation("Cleared tower state for airport reset {WorkflowId}", request.WorkflowId);
+    }
+    await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.AirportResetCompleted,
+        new AirportResetCompleted(request.WorkflowId));
+    return Results.Ok();
+})
+.WithTopic(DaprTopics.PubSubName, DaprTopics.AirportResetRequests);
+
+// --- HTTP API (read-only frontend views) -----------------------------------
 app.MapGet("/clearances", async (DaprClient dapr) =>
 {
     var all = await dapr.GetStateAsync<Dictionary<string, ActiveClearance>>(
@@ -166,6 +205,11 @@ public sealed class RunwayBoard
     private readonly Lock _gate = new();
     private readonly Dictionary<string, DateTimeOffset> _busyUntil = new();
 
+    public void Clear()
+    {
+        lock (_gate) _busyUntil.Clear();
+    }
+
     public string? TryReserveRunway(TimeSpan duration)
     {
         lock (_gate)
@@ -190,6 +234,11 @@ public sealed class WeatherWatch
     private readonly Lock _gate = new();
     private WeatherSnapshot? _latest;
 
+    public void Clear()
+    {
+        lock (_gate) _latest = null;
+    }
+
     public WeatherSnapshot? Latest
     {
         get { lock (_gate) return _latest; }
@@ -204,5 +253,23 @@ public sealed class WeatherWatch
             _latest = snapshot;
             return true;
         }
+    }
+}
+
+public sealed class AtcStateGate : IDisposable
+{
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    public async Task<IDisposable> EnterAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        return new Lease(_gate);
+    }
+
+    public void Dispose() => _gate.Dispose();
+
+    private sealed class Lease(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
     }
 }
