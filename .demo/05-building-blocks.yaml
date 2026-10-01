@@ -62,9 +62,9 @@ scenes:
         startPlaceholder: var state = await workflows.GetWorkflowStateAsync(flightId,
         endPlaceholder: true, cancellationToken);
       - action: open
-        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+        path: src/services/Airport.FlightOperations/Workflows/Activities/CheckWeatherActivity.cs
       - action: highlight
-        path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
+        path: src/services/Airport.FlightOperations/Workflows/Activities/CheckWeatherActivity.cs
         startPlaceholder: var snapshot = await snapshots.GetLatestAsync();
         endPlaceholder: 'span?.SetTag("weather.wind_kt", snapshot.WindKnots);'
 
