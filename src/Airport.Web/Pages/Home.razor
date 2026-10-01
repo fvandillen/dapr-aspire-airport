@@ -7,9 +7,7 @@
 
 <div class="page-header">
     <div>
-        <span class="eyebrow">AIRPORT OVERVIEW</span>
         <h1>Live traffic <span class="heading-count">@(Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count.ToString())</span></h1>
-        <p>Every aircraft. Every stage of the journey.</p>
     </div>
     <button class="scene-tool icon-tool" @onclick="Live.RefreshAsync" aria-label="Refresh flight board" title="Refresh">
         <LucideIcon Name="refresh-cw" Size="16" />

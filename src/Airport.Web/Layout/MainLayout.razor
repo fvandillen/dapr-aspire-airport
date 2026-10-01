@@ -16,10 +16,6 @@
     </header>
 
     <div class="workspace-heading">
-        <div>
-            <span class="eyebrow">SCHIPHOL INTERNATIONAL</span>
-            <div class="workspace-title">The airport. <span>Alive.</span></div>
-        </div>
         <button class="workspace-button panel-toggle" @onclick="() => _panelHidden = !_panelHidden"
                 aria-expanded="@(!_panelHidden)" aria-controls="operations-panel">
             <LucideIcon Name="@(_panelHidden ? "panel-left-open" : "panel-left-close")" Size="16" />
@@ -50,7 +46,7 @@
                 <small>@(Live.Weather is { } weather ? $"{weather.Current.WindKnots} kt / {weather.Current.VisibilityMeters:N0} m" : "No snapshot")</small>
             </strong>
         </a>
-        <div class="hud-platform"><span>DAPR <span class="platform-plus">+</span> ASPIRE</span><small>Distributed systems. One live world.</small></div>
+        <div class="hud-platform"><span>DAPR <span class="platform-plus">+</span> ASPIRE</span></div>
     </footer>
 </div>
 

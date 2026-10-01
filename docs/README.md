@@ -32,6 +32,8 @@ Shared Dapr components (Redis-backed, see [src/dapr/components](../src/dapr/comp
 
 A locally bundled Three.js airport stays mounted while navigation changes the operational panel. Aircraft reflect actual workflow states; positions and movement are **illustrative, not GPS tracking or a geographically accurate Schiphol model**. No sample aircraft are invented when the flight feed is empty.
 
+The workspace keeps operational controls, live metrics, and camera hints visible without decorative airport headings or simulation captions.
+
 | Action | UI element | Effect |
 | --- | --- | --- |
 | Orbit / zoom / pan | Drag / scroll or pinch / right-drag in the scene | Local camera only |

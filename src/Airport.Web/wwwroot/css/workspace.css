@@ -65,8 +65,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .feed-indicator.is-live { background: #78dfbc; box-shadow: 0 0 10px #78dfbc55; }
 .workspace-heading { position: absolute; top: 99px; left: 30px; display: flex; align-items: center; gap: 24px; }
 .eyebrow { display: block; font-size: 9px; font-weight: 600; letter-spacing: .2em; color: #9fb2c5; margin-bottom: 7px; }
-.workspace-title { font-size: 28px; font-weight: 550; line-height: 1.15; letter-spacing: -.04em; }
-.workspace-title > span { color: #94e5d8; }
 .workspace-button {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px;
     padding: 8px 12px; color: #d5e4ef; background: #102333cf; border: 1px solid #ffffff24;
@@ -154,9 +152,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .scene-tool.is-active { background: #78dfd018; color: #9de9de; border-color: #78dfd020; }
 .icon-tool { padding: 8px; }
 .scene-settings select { border: 0; color: #bacee0; background: #10212f; font-size: 10px; padding: 7px 5px; border-radius: 5px; max-width: 120px; }
-.scene-caption { position: absolute; bottom: 103px; left: 30px; right: 30px; display: flex; align-items: center; gap: 17px; pointer-events: none; color: #b8c9d6; font-size: 9px; }
-.scene-coordinate { font: 10px 'SFMono-Regular', Consolas, monospace; letter-spacing: .14em; color: #c2d1dc; }
-.caption-divider { padding-inline: 5px; color: #7290a6; }
 .scene-help { position: absolute; bottom: 138px; right: 30px; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: 380px; font-size: 9px; color: #c0d0dd; text-shadow: 0 1px 4px #000; pointer-events: none; }
 .keyboard-help { flex-basis: 100%; text-align: right; color: #99afc1; font-size: 8px; }
 .airport-hud { position: absolute; bottom: 20px; left: 30px; right: 30px; display: flex; align-items: center; min-height: 69px; padding: 14px 22px; border: 1px solid #ffffff20; border-radius: 12px; background: #0c1b2adb; backdrop-filter: blur(20px); z-index: 3; }
@@ -170,7 +165,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hud-platform { margin-left: auto; display: flex; flex-direction: column; gap: 6px; text-align: right; }
 .hud-platform > span { font-size: 10px; font-weight: 600; letter-spacing: .16em; }
 .platform-plus { color: #81d6ca; margin: 0 4px; }
-.hud-platform small { font-size: 8px; color: #91aabc; }
 .aircraft-label { position: absolute; color: #e9f6ff; background: #0c2133de; border: 1px solid #c5e6ff55; padding: 7px 10px; border-radius: 6px; font: 10px 'SFMono-Regular', Consolas, monospace; box-shadow: 0 5px 18px #0003; white-space: nowrap; cursor: pointer; backdrop-filter: blur(6px); }
 .aircraft-label > span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; }
 .aircraft-label > small { display: block; margin-top: 3px; font: 8px 'Segoe UI', sans-serif; color: #a8becf; }
@@ -187,14 +181,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (min-width: 1600px) {
     .app-main { width: 420px; }
     .panel-content { padding: 26px; }
-    .workspace-heading, .app-main, .scene-caption { left: 40px; }
+    .workspace-heading, .app-main { left: 40px; }
 }
 @media (max-width: 1150px) {
     .app-header { gap: 22px; padding-inline: 22px; }
     .app-nav .nav-link { padding-inline: 10px; }
     .workspace-status { font-size: 8px; }
     .workspace-heading { left: 22px; gap: 14px; }
-    .workspace-title { font-size: 24px; }
     .app-main { left: 22px; width: 345px; }
     .panel-content { padding: 20px 16px; }
     .scene-toolbar { right: 22px; }
@@ -202,14 +195,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .hud-metric { padding-inline: 18px; }
     .hud-platform { display: none; }
     .airport-hud { left: 22px; right: 22px; }
-    .scene-caption { left: 22px; }
     .scene-fallback { left: 70%; width: 270px; }
 }
 @media (max-width: 850px) {
     .workspace-status { display: none; }
     .app-header { justify-content: space-between; gap: 12px; padding-inline: 16px; }
     .workspace-heading { left: 16px; }
-    .workspace-title { font-size: 21px; }
     .panel-toggle { padding: 7px; font-size: 9px; }
     .scene-toolbar { right: 16px; }
     .camera-presets .scene-tool span { display: none; }
@@ -231,8 +222,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .app-nav .nav-link { padding: 7px 9px; font-size: 10px; gap: 5px; }
     .app-nav .nav-link svg { width: 13px; }
     .workspace-heading { top: 125px; left: 14px; right: 14px; justify-content: space-between; }
-    .workspace-heading .eyebrow { font-size: 7px; }
-    .workspace-title { font-size: 22px; }
     .scene-toolbar { top: 188px; right: 14px; left: 14px; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; }
     .camera-presets, .scene-settings { padding: 3px; gap: 0; }
     .camera-presets .scene-tool { min-width: 29px; padding: 5px; }
@@ -241,8 +230,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     .scene-settings .scene-tool svg { width: 13px; }
     .app-main { top: 49%; bottom: 88px; left: 12px; right: 12px; width: auto; border-radius: 12px; }
     .panel-content { padding: 18px 16px; }
-    .scene-caption { bottom: 72px; left: 15px; right: 15px; gap: 8px; font-size: 7px; }
-    .scene-coordinate { font-size: 8px; }
     .scene-help { display: none; }
     .airport-hud { bottom: 8px; left: 12px; right: 12px; min-height: 55px; padding: 9px 10px; }
     .hud-metric { gap: 5px; padding-inline: 10px; }
@@ -259,25 +246,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (max-width: 360px) {
     .workspace-heading { gap: 8px; }
-    .workspace-title { font-size: 19px; }
     .app-nav .nav-link { padding-inline: 6px; }
     .hud-metric { padding-inline: 7px; }
 }
 @media (max-height: 700px) and (min-width: 641px) {
     .workspace-heading { top: 86px; }
-    .workspace-heading .eyebrow { display: none; }
     .app-main { top: 130px; bottom: 110px; }
     .scene-toolbar { top: 87px; }
     .airport-hud { bottom: 12px; min-height: 60px; }
-    .scene-caption { bottom: 84px; }
     .scene-help { bottom: 112px; }
 }
 @media (max-width: 640px) and (max-height: 700px) {
     .app-header { height: 86px; gap: 4px; }
     .brand-subtitle { display: none; }
     .workspace-heading { top: 99px; }
-    .workspace-heading .eyebrow { display: none; }
-    .workspace-title { font-size: 18px; }
     .scene-toolbar { top: 142px; }
     .app-main { top: 45%; }
 }
