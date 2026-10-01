@@ -1,5 +1,6 @@
 using Airport.Contracts;
 using Airport.WeatherService;
+using Airport.ServiceDefaults;
 using Dapr;
 using Dapr.Client;
 
@@ -35,53 +36,56 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/weather", (WeatherState state) => Results.Ok(state.Current))
    .WithName("GetCurrentWeather");
 
-app.MapGet("/weather/status", (WeatherState state) => Results.Ok(new WeatherStatus(
-    Current: state.Current,
-    Paused: state.Paused,
-    OverrideActive: state.Override is not null,
-    PresetName: state.PresetName,
-    PublishIntervalSeconds: (int)WeatherPublisher.PublishInterval.TotalSeconds)))
+app.MapGet("/weather/status", (WeatherState state) => Results.Ok(state.Status))
    .WithName("GetWeatherStatus");
 
 // --- Control endpoints -----------------------------------------------------
 
-app.MapPost("/weather/pause", async (WeatherState state) =>
+app.MapPost("/weather/pause", async (WeatherState state, AirportUpdateNotifier updates) =>
 {
-    state.Paused = true;
+    if (state.SetPaused(true))
+        await updates.ChangedAsync();
     return Results.Ok();
 });
 
 app.MapPost("/weather/resume", async (
-    WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
+    WeatherState state, WeatherEventPublisher publisher, AirportUpdateNotifier updates,
+    CancellationToken cancellationToken) =>
 {
-    state.Paused = false;
+    if (state.SetPaused(false))
+        await updates.ChangedAsync();
     // Publish the current value immediately so subscribers stop seeing stale data.
     await publisher.PublishAsync(state.Current, state.Override is not null, cancellationToken);
     return Results.Ok();
 });
 
 app.MapPut("/weather/override", async (
-    WeatherSnapshot snapshot, WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
+    WeatherSnapshot snapshot, WeatherState state, WeatherEventPublisher publisher,
+    AirportUpdateNotifier updates, CancellationToken cancellationToken) =>
 {
     var pinned = state.SetOverride(snapshot, presetName: null);
+    await updates.ChangedAsync();
     await publisher.PublishAsync(pinned, true, cancellationToken);
     return Results.Ok(pinned);
 });
 
-app.MapDelete("/weather/override", (WeatherState state) =>
+app.MapDelete("/weather/override", async (WeatherState state, AirportUpdateNotifier updates) =>
 {
-    state.ClearOverride();
+    if (state.ClearOverride())
+        await updates.ChangedAsync();
     // Don't publish here: let the next random tick reflect the change naturally.
     return Results.NoContent();
 });
 
 app.MapPost("/weather/preset/{name}", async (
-    string name, WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
+    string name, WeatherState state, WeatherEventPublisher publisher,
+    AirportUpdateNotifier updates, CancellationToken cancellationToken) =>
 {
     var snapshot = WeatherPresets.TryGet(name);
     if (snapshot is null) return Results.NotFound($"Unknown preset '{name}'.");
 
     var pinned = state.SetOverride(snapshot, presetName: name.ToLowerInvariant());
+    await updates.ChangedAsync();
     await publisher.PublishAsync(pinned, true, cancellationToken);
     return Results.Ok(pinned);
 });
@@ -94,6 +98,17 @@ internal sealed class WeatherState
 {
     private readonly Lock _gate = new();
     private WeatherSnapshot _current = WeatherPresets.Cavok();
+    private bool _paused;
+
+    public WeatherStatus Status
+    {
+        get
+        {
+            lock (_gate)
+                return new(_current, _paused, Override is not null, PresetName,
+                    (int)WeatherPublisher.PublishInterval.TotalSeconds);
+        }
+    }
 
     public WeatherSnapshot Current
     {
@@ -101,7 +116,20 @@ internal sealed class WeatherState
     }
 
     /// <summary>When true, the periodic publisher skips publishing so subscribers see stale data.</summary>
-    public bool Paused { get; set; }
+    public bool Paused
+    {
+        get { lock (_gate) return _paused; }
+    }
+
+    public bool SetPaused(bool paused)
+    {
+        lock (_gate)
+        {
+            if (_paused == paused) return false;
+            _paused = paused;
+            return true;
+        }
+    }
 
     /// <summary>When non-null, the periodic publisher republishes this snapshot every tick.</summary>
     public WeatherSnapshot? Override { get; private set; }
@@ -136,12 +164,14 @@ internal sealed class WeatherState
         return snapshot with { ObservedAt = now > _current.ObservedAt ? now : _current.ObservedAt.AddTicks(1) };
     }
 
-    public void ClearOverride()
+    public bool ClearOverride()
     {
         lock (_gate)
         {
+            if (Override is null) return false;
             Override = null;
             PresetName = null;
+            return true;
         }
     }
 }
@@ -149,6 +179,7 @@ internal sealed class WeatherState
 internal sealed class WeatherPublisher(
     WeatherEventPublisher publisher,
     WeatherState state,
+    AirportUpdateNotifier updates,
     ILogger<WeatherPublisher> logger) : BackgroundService
 {
     /// <summary>Cadence between automatic weather snapshots. Slow enough that the demo audience can keep up.</summary>
@@ -193,6 +224,7 @@ internal sealed class WeatherPublisher(
 
             try
             {
+                await updates.ChangedAsync(stoppingToken);
                 await publisher.PublishAsync(snapshot, state.Override is not null, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

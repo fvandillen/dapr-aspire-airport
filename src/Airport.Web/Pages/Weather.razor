@@ -187,7 +187,7 @@ else
 
     protected override void OnInitialized() => Live.Changed += OnLiveChanged;
     private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
-    private Task LoadAsync() => Live.RefreshAsync();
+    private Task LoadAsync() => Live.RefreshWeatherAsync();
 
     private async Task PauseAsync()        => await RunAsync(() => Wx.PauseAsync());
     private async Task ResumeAsync()       => await RunAsync(() => Wx.ResumeAsync());
@@ -198,7 +198,7 @@ else
     {
         _busy = true;
         _lastError = null;
-        try { await action(); await LoadAsync(); }
+        try { await action(); }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {
             _lastError = $"Weather command failed: {ex.Message}";

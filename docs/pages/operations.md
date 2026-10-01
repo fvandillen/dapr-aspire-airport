@@ -2,7 +2,7 @@
 
 **File:** [src/Airport.Web/Pages/Operations.razor](../../src/Airport.Web/Pages/Operations.razor)
 
-Form over the persistent 3D airport. Submitting it kicks off the full Dapr workflow + actor + pub/sub flow; the new aircraft appears when the shared feed refreshes.
+Form over the persistent 3D airport. Submitting it kicks off the full Dapr workflow + actor + pub/sub flow; the new aircraft appears through SignalR-driven shared feed updates.
 
 ## What the user can do
 
@@ -21,10 +21,11 @@ The reset section is below the scheduling form. Confirmation is required; schedu
 
 ## Backend interactions
 
-Scheduling calls **FlightOperations** (`POST /flights`) via `FlightsApi.ScheduleAsync` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)), then refreshes the shared snapshot. The workspace additionally reads `GET /flights`, `GET /weather/status`, `GET /clearances`, and `GET /atc/weather`; see the [shared feed table](../README.md#immersive-workspace-all-routes).
+Scheduling calls **FlightOperations** (`POST /flights`) via `FlightsApi.ScheduleAsync` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)). FlightOperations sends SignalR `Changed` notifications after scheduling, committed actor transitions and reset/removal, refreshing `GET /flights` for connected clients. ATC independently notifies clearance/weather reset changes. The workspace additionally reads `GET /weather/status`, `GET /clearances`, and `GET /atc/weather` on each service's changes; see the [shared feed table](../README.md#immersive-workspace-all-routes).
 
 | Endpoint | Server behavior |
 | --- | --- |
+| SignalR `/hubs/airport` | Service-local change notifications on FlightOperations, WeatherService and ATC; initial/reconnect snapshots, with no idle polling. |
 | `DELETE /flights` | Stops non-terminal flight workflows, waits for termination, purges workflow history, removes Aircraft actor state and releases gate locks. Starts `AirportResetWorkflow`, which publishes `airport-reset-requests` and waits for an `atc-reset-completed` external event after ATC clears its state. Purges the reset workflow and deletes `aircraft-index` / `latest-weather` after acknowledgement. |
 
 Reset is scoped to the airport: no Redis `FLUSHDB` / `FLUSHALL`, and unrelated keys and applications are retained. Scheduling, operator commands and mutating workflow activities are serialized with reset; late clearance messages for deleted flights are ignored. Cleanup progress is persisted for retries. Weather publisher settings are unchanged, and cached weather can return on the next publication.

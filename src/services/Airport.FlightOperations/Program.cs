@@ -5,6 +5,7 @@ using Airport.FlightOperations.Aircraft;
 using Airport.FlightOperations.Weather;
 using Airport.FlightOperations.Workflows;
 using Airport.FlightOperations.Workflows.Activities;
+using Airport.ServiceDefaults;
 using Dapr;
 using Dapr.Actors;
 using Dapr.Actors.Client;
@@ -124,7 +125,8 @@ flights.AddEndpointFilter(async (context, next) =>
 });
 
 flights.MapDelete("/", async (
-    AirportStateReset reset, IHostApplicationLifetime lifetime, ILogger<Program> logger) =>
+    AirportStateReset reset, AirportUpdateNotifier updates,
+    IHostApplicationLifetime lifetime, ILogger<Program> logger) =>
 {
     // Finish cleanup even if the browser disconnects, but never wait indefinitely on Dapr.
     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
@@ -132,6 +134,7 @@ flights.MapDelete("/", async (
     try
     {
         await reset.ClearAsync(timeout.Token);
+        await updates.ChangedAsync();
         return Results.NoContent();
     }
     catch (Exception ex)
@@ -148,9 +151,11 @@ flights.MapPost("/", async (
     ScheduleFlightRequest request,
     DaprClient dapr,
     DaprWorkflowClient workflows,
+    AirportUpdateNotifier updates,
     ILogger<Program> logger) =>
 {
     var view = await FlightOps.ScheduleFlight(request, dapr, workflows, logger);
+    await updates.ChangedAsync();
     return Results.Ok(view);
 });
 
@@ -192,6 +197,7 @@ flights.MapGet("/{flightId}", async (string flightId) =>
 flights.MapPost("/seed", async (
     DaprClient dapr,
     DaprWorkflowClient workflows,
+    AirportUpdateNotifier updates,
     ILogger<Program> logger) =>
 {
     var samples = FlightFaker.NewRandomBatch(count: 4, now: DateTimeOffset.UtcNow);
@@ -200,6 +206,7 @@ flights.MapPost("/seed", async (
     foreach (var s in samples)
     {
         scheduled.Add(await FlightOps.ScheduleFlight(s, dapr, workflows, logger));
+        await updates.ChangedAsync();
     }
     return Results.Ok(scheduled);
 });

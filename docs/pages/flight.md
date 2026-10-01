@@ -8,7 +8,7 @@ Per-flight panel with a workflow-progress timeline and demo-only controls. Openi
 
 | Action | UI element | Calls | When enabled |
 | --- | --- | --- | --- |
-| See flight info (gate / runway / times / status / note) | Info card + selected 3D aircraft | `GET /flights/{id}` on entry; shared `GET /flights` snapshot every 2 s | Always |
+| See flight info (gate / runway / times / status / note) | Info card + selected 3D aircraft | `GET /flights/{id}` on entry; shared `GET /flights` on SignalR changes | Always |
 | Skip the current wait (boarding / weather hold / cruise / clearance backoff) | **Skip wait (advance)** | `POST /flights/{id}/advance` | When status is `WaitingForGate`, `BoardingPushback`, `Departed`, or `Cruising` |
 | Force-grant or deny takeoff clearance | **Force grant T/O** / **Force deny T/O** | `POST /flights/{id}/clearance` | When status is `AwaitingTakeoffClearance` |
 | Force-grant or deny landing clearance | **Force grant LDG** / **Force deny LDG** | `POST /flights/{id}/clearance` | When status is `AwaitingLandingClearance` |
@@ -24,12 +24,13 @@ All calls go to **FlightOperations** via `FlightsApi`.
 | Endpoint | Server behavior |
 | --- | --- |
 | `GET /flights/{id}` | Reads Aircraft actor state, returns `FlightView`; returns 404 for a flight removed by airport reset. |
-| `GET /flights` | Shared snapshot updates flight information and all scene aircraft every 2 s. |
+| `GET /flights` | Shared snapshot updates flight information and all scene aircraft on initial connection, reconnect and FlightOperations SignalR changes. |
+| SignalR `/hubs/airport` | `Changed` notifications follow committed actor state changes, scheduling and removal/reset; no idle polling. |
 | `POST /flights/{id}/advance` | Raises `advance` to skip a timed wait or prompt a weather recheck. Does not bypass weather minima; during a weather hold it consumes one retry. No-op if the workflow is waiting on a clearance event. |
 | `POST /flights/{id}/clearance` | Raises `clearance-takeoff` or `clearance-landing` with a synthetic `ClearanceResult`, bypassing ATC entirely. |
 | `POST /flights/{id}/cancel` | Marks the actor as `Cancelled`, terminates the workflow, **and explicitly unlocks the gate** so the next flight can board. |
 
-The persistent workspace also reads `GET /weather/status`, `GET /clearances`, and `GET /atc/weather`; see the [shared feed table](../README.md#immersive-workspace-all-routes). Successful commands refresh shared scene data. Failed reads or commands are shown in the panel rather than silently ignored.
+The persistent workspace also reads `GET /weather/status`, `GET /clearances`, and `GET /atc/weather`; see the [shared feed table](../README.md#immersive-workspace-all-routes). Workflow/actor changes notify the shared scene without extra command-triggered reads. Failed reads or commands are shown in the panel rather than silently ignored. Reset removes the selected flight's snapshot and reports that it is no longer in the airport.
 
 Operator endpoints also return 404 for removed flights. Use **Clear airport state** on Operations to remove all flights and their workflow history rather than cancelling one flight.
 
@@ -52,7 +53,7 @@ The 8-step `<ol class="timeline">` is driven entirely client-side by `StepIndexF
 
 ## Dapr building blocks touched (server-side)
 
-- **Actors** — every poll reads `AircraftActor` state; cancel writes to it.
+- **Actors** — initial/change-driven/manual snapshot reads access `AircraftActor` state; cancel writes to it. Notifications follow persisted state changes.
 - **Workflows** — `advance`, `cancel`, and `clearance` all manipulate the workflow instance (`RaiseEventAsync` / `TerminateWorkflowAsync`).
 - **Distributed lock** — cancel calls `dapr.Unlock("lockstore", "gate:<gate>", lockOwner: flightId)` to free the gate.
 - **Pub/sub + state store** — FlightOperations' `POST /flight-ops/weather-updates` subscriber saves `latest-weather` and signals weather holds via `weather-updated`. This is not called by the browser.

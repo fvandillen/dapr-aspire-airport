@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <ProjectReference Include="../../Airport.ServiceDefaults/Airport.ServiceDefaults.csproj" />
+    <Compile Include="../../Airport.Web/Services/*.cs" Link="Client/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

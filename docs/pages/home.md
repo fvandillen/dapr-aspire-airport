@@ -2,7 +2,7 @@
 
 **File:** [src/Airport.Web/Pages/Home.razor](../../src/Airport.Web/Pages/Home.razor)
 
-Live traffic panel over the persistent 3D airport. Uses the shared 2 s snapshot and renders an accessible flight card per flight. Aircraft placement illustrates workflow state, not geographic telemetry.
+Live traffic panel over the persistent 3D airport. Uses the shared SignalR-driven snapshot and renders an accessible flight card per flight. Aircraft placement illustrates workflow state, not geographic telemetry.
 
 ## What the user can do
 
@@ -22,6 +22,7 @@ Flight requests go to **FlightOperations** (`http://localhost:5083`) via the typ
 
 - `GET /flights` — fans out to each Aircraft actor and returns a `FlightView[]` (active flights first, then landed/cancelled by scheduled time).
 - `POST /flights/seed` — generates 4 flights via `FlightFaker` and starts a workflow per flight.
+- SignalR `/hubs/airport` — FlightOperations sends `Changed` after scheduling, actor state transitions and removal/reset. Each notification queues a fresh `GET /flights`; idle clients do not poll.
 
 ## Dapr building blocks touched (server-side, per request)
 

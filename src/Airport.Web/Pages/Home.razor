@@ -9,7 +9,7 @@
     <div>
         <h1>Live traffic <span class="heading-count">@(Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count.ToString())</span></h1>
     </div>
-    <button class="scene-tool icon-tool" @onclick="Live.RefreshAsync" aria-label="Refresh flight board" title="Refresh">
+    <button class="scene-tool icon-tool" @onclick="Live.RefreshFlightsAsync" aria-label="Refresh flight board" title="Refresh">
         <LucideIcon Name="refresh-cw" Size="16" />
     </button>
 </div>
@@ -86,7 +86,7 @@
 </div>
 
 <div class="panel-footnote"><span class="feed-indicator @(Live.FlightsLive ? "is-live" : "")"></span>
-    @(Live.FlightsUpdatedAt is { } updated ? $"Snapshot {updated.ToLocalTime():HH:mm:ss} / refreshes every 2s" : "Waiting for first snapshot")
+    @(Live.FlightsUpdatedAt is { } updated ? $"Snapshot {updated.ToLocalTime():HH:mm:ss} / live updates via SignalR" : "Waiting for first snapshot")
 </div>
 
 @code {
@@ -110,7 +110,6 @@
         try
         {
             await Flights.SeedAsync();
-            await Live.RefreshAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {

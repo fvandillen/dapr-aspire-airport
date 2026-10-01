@@ -240,10 +240,10 @@ else
 
     private void OnLiveChanged()
     {
-        if (Live.FlightsLive && Live.Flights.FirstOrDefault(f => f.FlightId == FlightId) is { } flight)
+        if (Live.FlightsLive)
         {
-            _flight = flight;
-            _loadError = null;
+            _flight = Live.Flights.FirstOrDefault(f => f.FlightId == FlightId);
+            _loadError = _flight is null ? "This flight is no longer in the airport. Return to the board." : null;
         }
         _ = InvokeAsync(StateHasChanged);
     }
@@ -281,7 +281,7 @@ else
     {
         _busy = true;
         _lastError = null;
-        try { await action(); await LoadAsync(); await Live.RefreshAsync(); }
+        try { await action(); }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
             // The operator navigated away while the request was in flight.
