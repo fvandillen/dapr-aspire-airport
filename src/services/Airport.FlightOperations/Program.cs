@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Airport.Contracts;
+using Airport.FlightOperations;
 using Airport.FlightOperations.Aircraft;
 using Airport.FlightOperations.Weather;
 using Airport.FlightOperations.Workflows;
@@ -15,6 +16,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.Services.AddOpenApi();
 builder.Services.AddDaprClient();
+builder.Services.AddSingleton<FlightStateGate>();
+builder.Services.AddSingleton<AirportStateReset>();
 builder.Services.AddSingleton<WeatherSnapshotStore>();
 builder.Services.AddTransient<WeatherUpdatesHandler>();
 
@@ -31,6 +34,8 @@ builder.Services.AddActors(options =>
 builder.Services.AddDaprWorkflow(options =>
 {
     options.RegisterWorkflow<FlightWorkflow>();
+    options.RegisterWorkflow<AirportResetWorkflow>();
+    options.RegisterActivity<PublishAirportResetActivity>();
     options.RegisterActivity<InitializeAircraftActivity>();
     options.RegisterActivity<UpdateAircraftStatusActivity>();
     options.RegisterActivity<RequestClearanceActivity>();
@@ -62,8 +67,10 @@ app.MapSubscribeHandler();
 app.MapActorsHandlers();
 
 app.MapPost("/flight-ops/weather-updates", async (
-    WeatherSnapshot snapshot, WeatherUpdatesHandler handler, CancellationToken cancellationToken) =>
+    WeatherSnapshot snapshot, WeatherUpdatesHandler handler, FlightStateGate gate,
+    CancellationToken cancellationToken) =>
 {
+    using var lease = await gate.EnterAsync(cancellationToken);
     await handler.HandleAsync(snapshot, cancellationToken);
     return Results.Ok();
 })
@@ -73,8 +80,12 @@ app.MapPost("/flight-ops/weather-updates", async (
 app.MapPost("/flight-ops/clearance-results", async (
     ClearanceResult result,
     DaprWorkflowClient workflows,
+    FlightStateGate gate,
     ILogger<Program> logger) =>
 {
+    using var lease = await gate.EnterAsync();
+    if (!await gate.ContainsAsync(result.FlightId))
+        return Results.Ok();
     var eventName = result.Kind switch
     {
         ClearanceKind.Takeoff => "clearance-takeoff",
@@ -91,8 +102,47 @@ app.MapPost("/flight-ops/clearance-results", async (
 })
 .WithTopic(DaprTopics.PubSubName, DaprTopics.ClearanceResults);
 
+// This subscriber must not take the flight gate: reset holds it while awaiting ATC's event.
+app.MapPost("/flight-ops/airport-reset-completed", async (
+    AirportResetCompleted completed, AirportStateReset reset, CancellationToken cancellationToken) =>
+{
+    await reset.AcknowledgeAsync(completed, cancellationToken);
+    return Results.Ok();
+})
+.WithTopic(DaprTopics.PubSubName, DaprTopics.AirportResetCompleted);
+
 // --- Flights HTTP API ------------------------------------------------------
 var flights = app.MapGroup("/flights");
+flights.AddEndpointFilter(async (context, next) =>
+{
+    var gate = context.HttpContext.RequestServices.GetRequiredService<FlightStateGate>();
+    using var lease = await gate.EnterAsync(context.HttpContext.RequestAborted);
+    if (context.HttpContext.Request.RouteValues["flightId"] is string flightId &&
+        !await gate.ContainsAsync(flightId, context.HttpContext.RequestAborted))
+        return Results.NotFound();
+    return await next(context);
+});
+
+flights.MapDelete("/", async (
+    AirportStateReset reset, IHostApplicationLifetime lifetime, ILogger<Program> logger) =>
+{
+    // Finish cleanup even if the browser disconnects, but never wait indefinitely on Dapr.
+    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
+    timeout.CancelAfter(TimeSpan.FromSeconds(90));
+    try
+    {
+        await reset.ClearAsync(timeout.Token);
+        return Results.NoContent();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Airport reset did not finish; retry to complete remaining cleanup");
+        return Results.Problem(
+            title: "Airport reset did not finish",
+            detail: "Some state may already have been removed. Retry Clear airport state to finish cleanup.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 flights.MapPost("/", async (
     ScheduleFlightRequest request,

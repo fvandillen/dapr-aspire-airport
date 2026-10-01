@@ -81,6 +81,38 @@
     </BbCard>
 </div>
 
+<section class="airport-reset" aria-labelledby="reset-title" aria-busy="@_resetting">
+    <h2 id="reset-title">Reset the demo</h2>
+    <p class="muted">Stop all flights and delete aircraft state, workflow history, clearances, gate locks and cached weather. This cannot be undone. Live weather will return with the next publication.</p>
+    @if (_confirmReset)
+    {
+        <p><strong>Clear all airport state?</strong> Other applications' Redis data is not affected.</p>
+        <div class="airport-reset-actions">
+            <BbButton Variant="ButtonVariant.Destructive" OnClick="ClearStateAsync" Disabled="@(_busy || _resetting)">
+                <LucideIcon Name="trash-2" Size="14" />
+                @(_resetting ? "Clearing airport state..." : "Yes, clear everything")
+            </BbButton>
+            <BbButton Variant="ButtonVariant.Outline" OnClick="@(() => _confirmReset = false)" Disabled="@_resetting">
+                Keep state
+            </BbButton>
+        </div>
+    }
+    else
+    {
+        <BbButton Variant="ButtonVariant.Outline" OnClick="ConfirmReset" Disabled="@_busy">
+            <LucideIcon Name="trash-2" Size="14" /> Clear airport state
+        </BbButton>
+    }
+    @if (_resetError is not null)
+    {
+        <p class="feed-warning" role="alert">@_resetError</p>
+    }
+    @if (_resetMessage is not null)
+    {
+        <p role="status">@_resetMessage</p>
+    }
+</section>
+
 @if (_lastScheduled is not null)
 {
     <div style="margin-top:1rem;">
@@ -113,6 +145,10 @@
     private bool _busy;
     private string? _lastError;
     private FlightView? _lastScheduled;
+    private bool _confirmReset;
+    private bool _resetting;
+    private string? _resetError;
+    private string? _resetMessage;
 
     protected override void OnInitialized() => Randomize();
 
@@ -131,6 +167,7 @@
     {
         _busy = true;
         _lastError = null;
+        _resetMessage = null;
         try
         {
             var view = await Flights.ScheduleAsync(new ScheduleFlightRequest(
@@ -147,6 +184,41 @@
         }
         finally
         {
+            _busy = false;
+        }
+    }
+
+    private void ConfirmReset()
+    {
+        _confirmReset = true;
+        _resetMessage = null;
+        _resetError = null;
+    }
+
+    private async Task ClearStateAsync()
+    {
+        _resetting = true;
+        _busy = true;
+        _resetError = null;
+        _resetMessage = null;
+        try
+        {
+            await Flights.ClearStateAsync();
+            _lastScheduled = null;
+            _lastError = null;
+            _confirmReset = false;
+            _resetMessage = "Airport state cleared. You can schedule a fresh flight.";
+            // An in-flight poll may have started before reset; finish it, then read fresh data.
+            await Live.RefreshAsync();
+            await Live.RefreshAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            _resetError = $"Could not finish clearing airport state. Some data may already be removed. Retry to finish cleanup. {ex.Message}";
+        }
+        finally
+        {
+            _resetting = false;
             _busy = false;
         }
     }

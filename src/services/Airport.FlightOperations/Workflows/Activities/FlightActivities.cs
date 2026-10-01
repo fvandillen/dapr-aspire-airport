@@ -10,11 +10,14 @@ using Dapr.Workflow;
 namespace Airport.FlightOperations.Workflows.Activities;
 
 /// <summary>Creates the Aircraft actor and seeds its state for a freshly scheduled flight.</summary>
-public sealed class InitializeAircraftActivity(ILogger<InitializeAircraftActivity> logger)
+public sealed class InitializeAircraftActivity(FlightStateGate gate, ILogger<InitializeAircraftActivity> logger)
     : WorkflowActivity<AircraftInitData, bool>
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, AircraftInitData data)
     {
+        using var lease = await gate.EnterAsync();
+        if (!await gate.ContainsAsync(data.FlightId))
+            return false;
         using var span = AirportTelemetry.Source.StartActivity(
             "workflow.activity.initialize_aircraft",
             ActivityKind.Internal,
@@ -35,13 +38,16 @@ public sealed class InitializeAircraftActivity(ILogger<InitializeAircraftActivit
 }
 
 /// <summary>Transitions the Aircraft actor to a new status (with optional runway / timestamps).</summary>
-public sealed class UpdateAircraftStatusActivity(ILogger<UpdateAircraftStatusActivity> logger)
+public sealed class UpdateAircraftStatusActivity(FlightStateGate gate, ILogger<UpdateAircraftStatusActivity> logger)
     : WorkflowActivity<UpdateAircraftStatusActivity.Input, bool>
 {
     public sealed record Input(string FlightId, StatusUpdate Update);
 
     public override async Task<bool> RunAsync(WorkflowActivityContext context, Input input)
     {
+        using var lease = await gate.EnterAsync();
+        if (!await gate.ContainsAsync(input.FlightId))
+            return false;
         using var span = AirportTelemetry.Source.StartActivity(
             "workflow.activity.update_status",
             ActivityKind.Internal,
@@ -63,11 +69,15 @@ public sealed class UpdateAircraftStatusActivity(ILogger<UpdateAircraftStatusAct
 }
 
 /// <summary>Publishes a ClearanceRequest on the Dapr pub/sub for ATC to pick up.</summary>
-public sealed class RequestClearanceActivity(DaprClient dapr, ILogger<RequestClearanceActivity> logger)
+public sealed class RequestClearanceActivity(
+    DaprClient dapr, FlightStateGate gate, ILogger<RequestClearanceActivity> logger)
     : WorkflowActivity<ClearanceRequest, bool>
 {
     public override async Task<bool> RunAsync(WorkflowActivityContext context, ClearanceRequest request)
     {
+        using var lease = await gate.EnterAsync();
+        if (!await gate.ContainsAsync(request.FlightId))
+            return false;
         using var span = AirportTelemetry.Source.StartActivity(
             "workflow.activity.request_clearance",
             ActivityKind.Producer,
@@ -136,13 +146,17 @@ public sealed record GateLockInput(string FlightId, string Gate);
 /// Uses the alpha Dapr distributed-lock API. The lock owner is the flight id (== workflow id),
 /// and the expiry acts as a safety net in case the workflow crashes without releasing.
 /// </remarks>
-public sealed class TryAcquireGateActivity(DaprClient dapr, ILogger<TryAcquireGateActivity> logger)
+public sealed class TryAcquireGateActivity(
+    DaprClient dapr, FlightStateGate gate, ILogger<TryAcquireGateActivity> logger)
     : WorkflowActivity<GateLockInput, bool>
 {
     // The distributed-lock API is still flagged Experimental in the Dapr .NET SDK.
 #pragma warning disable DAPR_DISTRIBUTEDLOCK
     public override async Task<bool> RunAsync(WorkflowActivityContext context, GateLockInput input)
     {
+        using var lease = await gate.EnterAsync();
+        if (!await gate.ContainsAsync(input.FlightId))
+            return false;
         using var span = AirportTelemetry.Source.StartActivity(
             "workflow.activity.try_acquire_gate",
             ActivityKind.Client,

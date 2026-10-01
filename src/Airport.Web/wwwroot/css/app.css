@@ -246,6 +246,27 @@ a {
     gap: 1rem;
 }
 
+.airport-reset {
+    margin-top: 2rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.airport-reset h2 {
+    font-size: 1.1rem;
+}
+
+.airport-reset p {
+    max-width: 70ch;
+    line-height: 1.5;
+}
+
+.airport-reset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 .metric {
     display: flex;
     flex-direction: column;
