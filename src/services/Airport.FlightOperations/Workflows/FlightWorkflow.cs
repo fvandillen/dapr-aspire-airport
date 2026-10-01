@@ -10,7 +10,7 @@ public sealed record FlightWorkflowResult(bool Completed, string Summary);
 
 /// <summary>
 /// Orchestrates the lifecycle of a single flight:
-/// schedule -> boarding -> weather check (retry loop) -> takeoff clearance ->
+/// schedule -> boarding -> published weather (event-driven hold) -> takeoff clearance ->
 /// departed -> cruise -> landing clearance -> landed.
 /// </summary>
 /// <remarks>
@@ -27,6 +27,8 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
 {
     /// <summary>External event name the API raises to skip the current timer.</summary>
     public const string AdvanceEventName = "advance";
+    public const string WeatherUpdatedEventName = "weather-updated";
+    public const string WaitingForWeatherStatus = "waiting-for-weather";
 
     public override async Task<FlightWorkflowResult> RunAsync(
         WorkflowContext context,
@@ -75,31 +77,49 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
             Note: waitCount > 0 ? $"Gate {input.Gate} acquired after {waitCount} retries" : null));
         await WaitOrAdvance(context, TimeSpan.FromSeconds(60));
 
-        // --- 2. Weather check, with a retry loop --------------------------
-        WeatherSnapshot weather;
-        for (var attempt = 0; ; attempt++)
+        // Register the wait before reading the durable snapshot so an update
+        // arriving between the read and the event wait is buffered, not lost.
+        context.SetCustomStatus(WaitingForWeatherStatus);
+        var weatherAttempts = 0;
+        var nextWeatherRetry = context.CurrentUtcDateTime.AddSeconds(60);
+        while (true)
         {
-            weather = await context.CallActivityAsync<WeatherSnapshot>(
+            var weather = await context.CallActivityAsync<WeatherSnapshot?>(
                 nameof(CheckWeatherActivity), new CheckWeatherInput());
 
-            if (weather.IsFlyable) break;
+            if (weather?.IsFlyable == true) break;
 
-            if (attempt >= 4)
+            if (weatherAttempts >= 4)
             {
+                context.SetCustomStatus(null);
+                var reason = weather is null ? "weather-unavailable" : "weather";
+                var note = weather is null
+                    ? "Cancelled: no weather events received"
+                    : $"Cancelled: persistent bad weather ({weather.Condition})";
                 await ReleaseGate(context, gateLockInput);
                 await SetStatus(context, input.FlightId, new StatusUpdate(
-                    FlightStatus.Cancelled, Note: $"Cancelled: persistent bad weather ({weather.Condition})"));
-                await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Cancelled, "weather");
-                return new FlightWorkflowResult(false, "Cancelled: weather");
+                    FlightStatus.Cancelled, Note: note));
+                await RecordOutcome(context, input.FlightId, workflowStartedAt, FlightStatus.Cancelled, reason);
+                return new FlightWorkflowResult(false, note);
             }
 
             await SetStatus(context, input.FlightId, new StatusUpdate(
-                FlightStatus.BoardingPushback, Note: $"Weather hold: {weather.Condition}"));
-            await WaitOrAdvance(context, TimeSpan.FromSeconds(60));
+                FlightStatus.BoardingPushback,
+                Note: weather is null ? "Waiting for the first weather event" : $"Weather hold: {weather.Condition}"));
+
+            var changed = await WaitForWeatherOrAdvance(context, nextWeatherRetry);
+            // Weather notifications prompt an immediate recheck without consuming
+            // retries or extending the existing one-minute hold deadline.
+            if (!changed || context.CurrentUtcDateTime >= nextWeatherRetry)
+            {
+                weatherAttempts++;
+                nextWeatherRetry = context.CurrentUtcDateTime.AddSeconds(60);
+            }
         }
+        context.SetCustomStatus(null);
 
         // --- 3. Takeoff clearance request/wait loop -----------------------
-        await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.AwaitingTakeoffClearance));
+        await SetStatus(context, input.FlightId, new StatusUpdate(FlightStatus.AwaitingTakeoffClearance, Note: ""));
 
         var takeoff = await RequestClearanceWithRetry(
             context, input.FlightId, input.Callsign, ClearanceKind.Takeoff, eventName: "clearance-takeoff");
@@ -186,6 +206,19 @@ public sealed class FlightWorkflow : Workflow<FlightWorkflowInput, FlightWorkflo
         {
             // Timer expired naturally — the wait is over.
         }
+    }
+
+    private static async Task<bool> WaitForWeatherOrAdvance(WorkflowContext context, DateTime retryAt)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var weather = context.WaitForExternalEventAsync<bool>(WeatherUpdatedEventName, cancellation.Token);
+        var advance = context.WaitForExternalEventAsync<bool>(AdvanceEventName, cancellation.Token);
+        var timer = context.CreateTimer(retryAt, cancellation.Token);
+        var completed = await Task.WhenAny(weather, advance, timer);
+        await completed;
+        // Remove the losing event waits so they cannot consume a later operator command.
+        cancellation.Cancel();
+        return completed == weather;
     }
 
     /// <summary>

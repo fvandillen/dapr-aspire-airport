@@ -1,14 +1,83 @@
 ﻿@inherits LayoutComponentBase
+@inject AirportLiveState Live
+@inject NavigationManager Nav
+@implements IDisposable
 
-<div class="app-shell">
-    <aside class="app-sidebar">
+<div class="app-shell dark">
+    <a class="skip-link" href="#operations-panel" @onclick="ShowPanel">Skip to operational controls</a>
+    <AirportScene />
+
+    <header class="app-header">
         <NavMenu />
-    </aside>
+        <div class="workspace-status" aria-label="Backend connections">
+            <span class="feed-indicator @(Live.FlightsLive ? "is-live" : "")" title="@(Live.FlightsError ?? "Flight operations")"></span>
+            <span>@(Live.FlightsLive ? "LIVE OPERATIONS" : "CONNECTING / STALE")</span>
+        </div>
+    </header>
 
-    <main class="app-main">
-        @Body
+    <div class="workspace-heading">
+        <div>
+            <span class="eyebrow">SCHIPHOL INTERNATIONAL</span>
+            <div class="workspace-title">The airport. <span>Alive.</span></div>
+        </div>
+        <button class="workspace-button panel-toggle" @onclick="() => _panelHidden = !_panelHidden"
+                aria-expanded="@(!_panelHidden)" aria-controls="operations-panel">
+            <LucideIcon Name="@(_panelHidden ? "panel-left-open" : "panel-left-close")" Size="16" />
+            @(_panelHidden ? "Show controls" : "Explore airport")
+        </button>
+    </div>
+
+    <main id="operations-panel" class="app-main" hidden="@_panelHidden" tabindex="-1">
+        <div class="panel-content">@Body</div>
     </main>
+
+    <footer class="airport-hud" aria-label="Airport live summary">
+        <div class="hud-metric">
+            <span class="hud-label">Traffic</span>
+            <strong>@(Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count.ToString("00")) <small>flights</small></strong>
+        </div>
+        <div class="hud-metric">
+            <span class="hud-label">Airborne</span>
+            <strong>@(Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count(f => f.Status is FlightStatus.Departed or FlightStatus.Cruising or FlightStatus.AwaitingLandingClearance).ToString("00"))</strong>
+        </div>
+        <a href="/atc" class="hud-metric">
+            <span class="hud-label"><span class="feed-indicator @(Live.TowerLive ? "is-live" : "")"></span> Runway clearances</span>
+            <strong>@(Live.TowerLive ? Live.ActiveClearances.Count().ToString("00") : "--") <small>@(Live.TowerLive ? "active" : "unavailable")</small></strong>
+        </a>
+        <a href="/weather" class="hud-metric hud-weather">
+            <span class="hud-label"><span class="feed-indicator @(Live.WeatherLive ? "is-live" : "")"></span> Weather @(!Live.WeatherLive ? "/ stale or unavailable" : Live.Weather?.Paused == true ? "/ publisher paused" : "")</span>
+            <strong>@(Live.Weather?.Current.Condition ?? "Awaiting weather")
+                <small>@(Live.Weather is { } weather ? $"{weather.Current.WindKnots} kt / {weather.Current.VisibilityMeters:N0} m" : "No snapshot")</small>
+            </strong>
+        </a>
+        <div class="hud-platform"><span>DAPR <span class="platform-plus">+</span> ASPIRE</span><small>Distributed systems. One live world.</small></div>
+    </footer>
 </div>
 
 <BbToastProvider />
 <BbDialogProvider />
+
+@code {
+    private bool _panelHidden;
+
+    protected override void OnInitialized()
+    {
+        Live.Changed += OnLiveChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        Live.Start();
+    }
+
+    private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
+    private void ShowPanel() => _panelHidden = false;
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _panelHidden = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Live.Changed -= OnLiveChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

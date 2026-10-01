@@ -19,7 +19,7 @@ dotnetfriday — June 2026
 3. **Dapr** — sidecar, building blocks, components
 4. **Aspire** — AppHost, ServiceDefaults, the Dapr integration
 5. **Observability** — OpenTelemetry, sidecar traces, custom metrics
-6. **Building blocks in action** — pub/sub, state, service invocation
+6. **Building blocks in action** — pub/sub, state, event-driven workflows
 7. *Bonus:* **Workflows + Actors**
 
 ---
@@ -303,7 +303,7 @@ await dapr.PublishEventAsync("pubsub", "weather-updates", snapshot);
 app.MapPost("/atc/weather-updates",
     (WeatherSnapshot snapshot, WeatherWatch watch) =>
 {
-    watch.Latest = snapshot;
+    watch.Observe(snapshot);
     return Results.Ok();
 })
 .WithTopic("pubsub", "weather-updates");
@@ -339,25 +339,26 @@ await dapr.SaveStateAsync("statestore", "active-clearances", map);
 
 ---
 
-# Service-to-Service Invocation
+# Weather Events Drive the Workflow
 
-Call services by **name** — not by IP or DNS.
+Publish once. ATC and FlightOperations react independently.
 
 ```csharp
-// FlightOperations workflow — ask the weather service over the sidecar
-using var client = DaprClient.CreateInvokeHttpClient(appId: "weather-service");
+// FlightOperations subscriber — after persisting the newest snapshot
+await workflows.RaiseEventAsync(flightId, "weather-updated", true);
 
-var snapshot = await client.GetFromJsonAsync<WeatherSnapshot>("/weather");
+// Workflow activity — read the latest received weather from the state store
+var snapshot = await snapshots.GetLatestAsync();
 ```
 
-The sidecar handles:
+The weather gate:
 
-- **Name resolution** — works in dev, Kubernetes, Container Apps
-- **mTLS** between sidecars (zero-config certificate rotation)
-- **Retries, timeouts, circuit breakers** via resiliency policies
-- **Distributed tracing** propagation
+- **Durable snapshot** — available to new flights and after a service restart
+- **External event** — weather changes wake the hold immediately
+- **Safe waits** — missing or bad weather cannot silently grant takeoff
+- **Bounded retries** — timer or operator advance; release the gate on cancellation
 
-> Demo: every workflow tick produces a `check_weather` span — visible in the dashboard.
+> Demo: pause publishing, pin Fog, advance past boarding, then choose CAVOK. Watch the flight progress without a service-invocation call.
 
 ---
 

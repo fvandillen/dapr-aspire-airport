@@ -1,5 +1,5 @@
 @page "/atc"
-@inject AtcApi Tower
+@inject AirportLiveState Live
 @implements IDisposable
 
 <PageTitle>ATC Tower</PageTitle>
@@ -14,15 +14,20 @@
     </BbButton>
 </div>
 
+@if (Live.TowerError is not null || Live.TowerWeatherError is not null)
+{
+    <div class="feed-warning" role="status">@(Live.TowerError ?? Live.TowerWeatherError)</div>
+}
+
 <BbCard>
     <BbCardHeader>
         <BbCardTitle>Active runway clearances</BbCardTitle>
         <BbCardDescription>Each entry expires automatically after 15 seconds.</BbCardDescription>
     </BbCardHeader>
     <BbCardContent>
-        @if (_clearances.Count == 0)
+        @if (!_clearances.Any())
         {
-            <p class="muted">No active clearances.</p>
+            <p class="muted">@(Live.TowerLive ? "No active clearances." : "Waiting for tower clearances. Runway availability is unknown.")</p>
         }
         else
         {
@@ -40,7 +45,7 @@
                     @foreach (var c in _clearances)
                     {
                         <tr style="border-bottom:1px solid var(--border);">
-                            <td style="padding:0.5rem 0;"><strong>@c.Callsign</strong></td>
+                            <td style="padding:0.5rem 0;"><a href="@($"/flight/{Uri.EscapeDataString(c.FlightId)}")"><strong>@c.Callsign</strong></a></td>
                             <td>
                                 <BbBadge Variant="@(c.Kind == ClearanceKind.Takeoff ? BadgeVariant.Default : BadgeVariant.Secondary)">
                                     @c.Kind
@@ -81,30 +86,11 @@
 }
 
 @code {
-    private List<ActiveClearance> _clearances = new();
-    private WeatherSnapshot? _lastWeather;
-    private System.Threading.Timer? _poller;
+    private IEnumerable<ActiveClearance> _clearances => Live.ActiveClearances;
+    private WeatherSnapshot? _lastWeather => Live.TowerWeather;
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAsync();
-        _poller = new System.Threading.Timer(async _ =>
-        {
-            try { await InvokeAsync(LoadAsync); } catch { }
-        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-    }
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            var clearances = await Tower.GetActiveClearancesAsync();
-            _clearances = clearances.ToList();
-            _lastWeather = await Tower.GetLastSeenWeatherAsync();
-            StateHasChanged();
-        }
-        catch { /* retry next tick */ }
-    }
-
-    public void Dispose() => _poller?.Dispose();
+    protected override void OnInitialized() => Live.Changed += OnLiveChanged;
+    private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
+    private Task LoadAsync() => Live.RefreshAsync();
+    public void Dispose() => Live.Changed -= OnLiveChanged;
 }

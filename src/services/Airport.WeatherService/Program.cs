@@ -1,4 +1,6 @@
 using Airport.Contracts;
+using Airport.WeatherService;
+using Dapr;
 using Dapr.Client;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.Services.AddOpenApi();
 builder.Services.AddDaprClient();
+builder.Services.AddSingleton<WeatherEventPublisher>();
 
 // Latest snapshot + control flags live in a singleton so HTTP handlers and the
 // background publisher can read/write the same state.
@@ -48,20 +51,20 @@ app.MapPost("/weather/pause", async (WeatherState state) =>
     return Results.Ok();
 });
 
-app.MapPost("/weather/resume", async (WeatherState state, DaprClient dapr) =>
+app.MapPost("/weather/resume", async (
+    WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
 {
     state.Paused = false;
     // Publish the current value immediately so subscribers stop seeing stale data.
-    await PublishCurrent(dapr, state);
+    await publisher.PublishAsync(state.Current, state.Override is not null, cancellationToken);
     return Results.Ok();
 });
 
 app.MapPut("/weather/override", async (
-    WeatherSnapshot snapshot, WeatherState state, DaprClient dapr) =>
+    WeatherSnapshot snapshot, WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
 {
-    var pinned = snapshot with { ObservedAt = DateTimeOffset.UtcNow };
-    state.SetOverride(pinned, presetName: null);
-    await PublishCurrent(dapr, state);
+    var pinned = state.SetOverride(snapshot, presetName: null);
+    await publisher.PublishAsync(pinned, true, cancellationToken);
     return Results.Ok(pinned);
 });
 
@@ -73,31 +76,17 @@ app.MapDelete("/weather/override", (WeatherState state) =>
 });
 
 app.MapPost("/weather/preset/{name}", async (
-    string name, WeatherState state, DaprClient dapr) =>
+    string name, WeatherState state, WeatherEventPublisher publisher, CancellationToken cancellationToken) =>
 {
     var snapshot = WeatherPresets.TryGet(name);
     if (snapshot is null) return Results.NotFound($"Unknown preset '{name}'.");
 
-    state.SetOverride(snapshot, presetName: name.ToLowerInvariant());
-    await PublishCurrent(dapr, state);
-    return Results.Ok(snapshot);
+    var pinned = state.SetOverride(snapshot, presetName: name.ToLowerInvariant());
+    await publisher.PublishAsync(pinned, true, cancellationToken);
+    return Results.Ok(pinned);
 });
 
 app.Run();
-
-// ---------------------------------------------------------------------------
-
-static async Task PublishCurrent(DaprClient dapr, WeatherState state)
-{
-    try
-    {
-        await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.WeatherUpdates, state.Current);
-    }
-    catch
-    {
-        // Best-effort: the periodic loop will retry.
-    }
-}
 
 // ---------------------------------------------------------------------------
 
@@ -109,7 +98,6 @@ internal sealed class WeatherState
     public WeatherSnapshot Current
     {
         get { lock (_gate) return _current; }
-        set { lock (_gate) _current = value; }
     }
 
     /// <summary>When true, the periodic publisher skips publishing so subscribers see stale data.</summary>
@@ -121,14 +109,31 @@ internal sealed class WeatherState
     /// <summary>Optional friendly preset name behind the current override (for diagnostics).</summary>
     public string? PresetName { get; private set; }
 
-    public void SetOverride(WeatherSnapshot snapshot, string? presetName)
+    public WeatherSnapshot SetOverride(WeatherSnapshot snapshot, string? presetName)
     {
         lock (_gate)
         {
-            Override = snapshot;
+            _current = Stamp(snapshot);
+            Override = _current;
             PresetName = presetName;
-            _current = snapshot;
+            return _current;
         }
+    }
+
+    public WeatherSnapshot? NextSnapshot(WeatherSnapshot generated)
+    {
+        lock (_gate)
+        {
+            if (Paused) return null;
+            _current = Stamp(Override ?? generated);
+            return _current;
+        }
+    }
+
+    private WeatherSnapshot Stamp(WeatherSnapshot snapshot)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return snapshot with { ObservedAt = now > _current.ObservedAt ? now : _current.ObservedAt.AddTicks(1) };
     }
 
     public void ClearOverride()
@@ -142,7 +147,7 @@ internal sealed class WeatherState
 }
 
 internal sealed class WeatherPublisher(
-    DaprClient dapr,
+    WeatherEventPublisher publisher,
     WeatherState state,
     ILogger<WeatherPublisher> logger) : BackgroundService
 {
@@ -171,52 +176,32 @@ internal sealed class WeatherPublisher(
                 continue;
             }
 
-            WeatherSnapshot snapshot;
-            if (state.Override is { } pinned)
+            // Select overrides atomically so this tick cannot overwrite a newly applied preset.
+            var snapshot = state.NextSnapshot(new WeatherSnapshot(
+                ObservedAt: DateTimeOffset.UtcNow,
+                Condition: s_conditions[rng.Next(s_conditions.Length)],
+                TemperatureCelsius: Math.Round(rng.NextDouble() * 20 + 5, 1),
+                WindKnots: rng.Next(0, 20),
+                WindDirectionDegrees: rng.Next(0, 360),
+                VisibilityMeters: rng.Next(4_000, 10_001),
+                CloudBaseFeet: rng.Next(1_500, 8_001)));
+            if (snapshot is null)
             {
-                // Keep the same condition, but refresh the timestamp so subscribers see "live" data.
-                snapshot = pinned with { ObservedAt = DateTimeOffset.UtcNow };
+                logger.LogDebug("Weather publishing was paused during this tick");
+                continue;
             }
-            else
-            {
-                // Gentle random walk - mostly flyable, occasional weather but no wild swings.
-                snapshot = new WeatherSnapshot(
-                    ObservedAt: DateTimeOffset.UtcNow,
-                    Condition: s_conditions[rng.Next(s_conditions.Length)],
-                    TemperatureCelsius: Math.Round(rng.NextDouble() * 20 + 5, 1),
-                    WindKnots: rng.Next(0, 20),
-                    WindDirectionDegrees: rng.Next(0, 360),
-                    VisibilityMeters: rng.Next(4_000, 10_001),
-                    CloudBaseFeet: rng.Next(1_500, 8_001));
-            }
-
-            state.Current = snapshot;
-
-            using var span = AirportTelemetry.Source.StartActivity("weather.publish");
-            span?.SetTag("weather.condition", snapshot.Condition);
-            span?.SetTag("weather.flyable", snapshot.IsFlyable);
-            span?.SetTag("weather.wind_kt", snapshot.WindKnots);
-            span?.SetTag("weather.visibility_m", snapshot.VisibilityMeters);
-            span?.SetTag("weather.override_active", state.Override is not null);
 
             try
             {
-                await dapr.PublishEventAsync(
-                    DaprTopics.PubSubName, DaprTopics.WeatherUpdates, snapshot, stoppingToken);
-
-                AirportTelemetry.WeatherPublished.Add(1,
-                    new KeyValuePair<string, object?>("weather.condition", snapshot.Condition),
-                    new KeyValuePair<string, object?>("weather.flyable", snapshot.IsFlyable));
-
-                logger.LogInformation(
-                    "Published weather: {Condition} {Temp}°C wind {Wind}kt vis {Vis}m flyable={Flyable} (override={Override})",
-                    snapshot.Condition, snapshot.TemperatureCelsius, snapshot.WindKnots,
-                    snapshot.VisibilityMeters, snapshot.IsFlyable, state.Override is not null);
+                await publisher.PublishAsync(snapshot, state.Override is not null, stoppingToken);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                span?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
-                logger.LogWarning(ex, "Failed to publish weather snapshot (Dapr sidecar not ready yet?)");
+                return;
+            }
+            catch (DaprException ex)
+            {
+                logger.LogWarning(ex, "Weather publication will retry on the next tick");
             }
         }
         while (await ticker.WaitForNextTickAsync(stoppingToken));

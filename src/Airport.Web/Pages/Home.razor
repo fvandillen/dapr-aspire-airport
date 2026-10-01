@@ -1,134 +1,122 @@
-﻿@page "/"
+@page "/"
 @inject FlightsApi Flights
-@inject NavigationManager Nav
+@inject AirportLiveState Live
 @implements IDisposable
 
-<PageTitle>AMS Departures</PageTitle>
+<PageTitle>AMS / Live Airport</PageTitle>
 
 <div class="page-header">
     <div>
-        <h1>Departure Board</h1>
-        <p>Live flight status fed by the FlightOperations service.</p>
+        <span class="eyebrow">AIRPORT OVERVIEW</span>
+        <h1>Live traffic <span class="heading-count">@(Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count.ToString())</span></h1>
+        <p>Every aircraft. Every stage of the journey.</p>
     </div>
-    <div style="display: flex; gap: 0.5rem;">
-        <BbButton Variant="ButtonVariant.Outline" OnClick="LoadAsync">
-            <LucideIcon Name="refresh-cw" Size="14" /> Refresh
-        </BbButton>
-        <BbButton Variant="ButtonVariant.Default" OnClick="SeedAsync" Disabled="@_seeding">
-            <LucideIcon Name="sparkles" Size="14" />
-            @(_seeding ? "Seeding..." : "Seed sample flights")
-        </BbButton>
-    </div>
+    <button class="scene-tool icon-tool" @onclick="Live.RefreshAsync" aria-label="Refresh flight board" title="Refresh">
+        <LucideIcon Name="refresh-cw" Size="16" />
+    </button>
 </div>
 
-<div class="grid-3" style="margin-bottom: 1rem;">
-    <BbCard>
-        <BbCardContent>
-            <div class="metric">
-                <span class="metric-label">Total flights</span>
-                <span class="metric-value">@_flights.Count</span>
-            </div>
-        </BbCardContent>
-    </BbCard>
-    <BbCard>
-        <BbCardContent>
-            <div class="metric">
-                <span class="metric-label">In the air</span>
-                <span class="metric-value">@_flights.Count(f => f.Status is FlightStatus.Departed or FlightStatus.Cruising or FlightStatus.AwaitingLandingClearance)</span>
-            </div>
-        </BbCardContent>
-    </BbCard>
-    <BbCard>
-        <BbCardContent>
-            <div class="metric">
-                <span class="metric-label">Cancelled / diverted</span>
-                <span class="metric-value">@_flights.Count(f => f.Status is FlightStatus.Cancelled)</span>
-            </div>
-        </BbCardContent>
-    </BbCard>
+@if (Live.FlightsError is not null)
+{
+    <div class="feed-warning" role="status">@Live.FlightsError</div>
+}
+@if (_actionError is not null)
+{
+    <div class="feed-warning" role="alert">@_actionError</div>
+}
+
+<div class="traffic-summary">
+    <div><strong>@CountLabel(f => f.Status is not (FlightStatus.Landed or FlightStatus.Cancelled))</strong><span>Active</span></div>
+    <div><strong>@CountLabel(f => f.Status is FlightStatus.Landed)</strong><span>Landed</span></div>
+    <div><strong>@CountLabel(f => f.Status is FlightStatus.Cancelled)</strong><span>Cancelled</span></div>
 </div>
 
-<div class="board">
-    <table>
-        <thead>
-            <tr>
-                <th>Time</th>
-                <th>Flight</th>
-                <th>To</th>
-                <th>Gate</th>
-                <th>Aircraft</th>
-                <th>Runway</th>
-                <th>Status</th>
-                <th>Note</th>
-            </tr>
-        </thead>
-        <tbody>
-            @if (_flights.Count == 0)
-            {
-                <tr>
-                    <td colspan="8" style="text-align:center; padding: 2rem;" class="muted">
-                        No flights scheduled yet. Click <em>Seed sample flights</em> above.
-                    </td>
-                </tr>
-            }
-            else
-            {
-                @foreach (var f in _flights)
+<div class="traffic-actions">
+    <button class="workspace-button primary-button" @onclick="SeedAsync" disabled="@_seeding">
+        <LucideIcon Name="sparkles" Size="15" /> @(_seeding ? "Scheduling..." : "Seed sample flights")
+    </button>
+    <a class="workspace-button" href="/operations" title="Schedule a flight"><LucideIcon Name="plus" Size="15" /> New flight</a>
+</div>
+
+<label class="traffic-search">
+    <LucideIcon Name="search" Size="15" />
+    <span class="sr-only">Search flights by callsign, destination, or gate</span>
+    <input type="search" @bind="_search" @bind:event="oninput" placeholder="Find a flight, destination, gate..." />
+</label>
+
+<div class="traffic-list">
+    @if (Live.FlightsUpdatedAt is null)
+    {
+        <div class="empty-traffic">
+            <LucideIcon Name="radio-tower" Size="30" />
+            <h2>Connecting to flight operations</h2>
+            <p>The airfield is ready. Flights will appear when the service is available.</p>
+        </div>
+    }
+    else if (Live.Flights.Count == 0)
+    {
+        <div class="empty-traffic">
+            <LucideIcon Name="plane-takeoff" Size="34" />
+            <h2>Your airfield is ready</h2>
+            <p>Seed four sample flights or schedule your own. Watch each workflow move through the airport.</p>
+        </div>
+    }
+    else if (!FilteredFlights.Any())
+    {
+        <p class="muted empty-traffic">No flights match your search.</p>
+    }
+    else
+    {
+        @foreach (var flight in FilteredFlights)
+        {
+            <a @key="flight.FlightId" href="@($"/flight/{Uri.EscapeDataString(flight.FlightId)}")"
+               class="traffic-card @(flight.Status is FlightStatus.Landed or FlightStatus.Cancelled ? "is-complete" : "")"
+               aria-label="@($"{flight.Callsign} to {flight.Destination}, {StatusLabel(flight.Status)}. Open flight controls and follow aircraft.")">
+                <div class="traffic-card-top">
+                    <span class="flight-airline">@flight.Callsign</span>
+                    <span class="badge @StatusClass(flight.Status)">@StatusLabel(flight.Status)</span>
+                </div>
+                <div class="flight-route"><span>@flight.Origin</span><span class="route-line"><LucideIcon Name="plane" Size="15" /></span><span>@flight.Destination</span><LucideIcon Name="arrow-up-right" Size="16" /></div>
+                <div class="flight-meta"><span>@flight.ScheduledDeparture.ToLocalTime().ToString("HH:mm")</span><span>Gate <strong>@flight.Gate</strong></span><span>@flight.AircraftType</span></div>
+                @if (flight.Runway is not null || !string.IsNullOrWhiteSpace(flight.Note))
                 {
-                    <tr class="board-row @RowClass(f.Status)"
-                        @onclick="@(() => Nav.NavigateTo($"/flight/{f.FlightId}"))"
-                        title="Open flight details">
-                        <td>@f.ScheduledDeparture.ToLocalTime().ToString("HH:mm")</td>
-                        <td><strong>@f.Callsign</strong></td>
-                        <td>@f.Destination</td>
-                        <td>@f.Gate</td>
-                        <td>@f.AircraftType</td>
-                        <td>@(f.Runway ?? "—")</td>
-                        <td><span class="badge @StatusClass(f.Status)">@StatusLabel(f.Status)</span></td>
-                        <td class="muted">@(f.Note ?? "")</td>
-                    </tr>
+                    <div class="flight-note">@(flight.Runway is not null ? $"RWY {flight.Runway} / " : "")@flight.Note</div>
                 }
-            }
-        </tbody>
-    </table>
+            </a>
+        }
+    }
+</div>
+
+<div class="panel-footnote"><span class="feed-indicator @(Live.FlightsLive ? "is-live" : "")"></span>
+    @(Live.FlightsUpdatedAt is { } updated ? $"Snapshot {updated.ToLocalTime():HH:mm:ss} / refreshes every 2s" : "Waiting for first snapshot")
 </div>
 
 @code {
-    private List<FlightView> _flights = new();
-    private System.Threading.Timer? _poller;
     private bool _seeding;
+    private string? _actionError;
+    private string _search = "";
+    private string CountLabel(Func<FlightView, bool> predicate) =>
+        Live.FlightsUpdatedAt is null ? "--" : Live.Flights.Count(predicate).ToString();
+    private IEnumerable<FlightView> FilteredFlights => Live.Flights.Where(f =>
+        f.Callsign.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+        f.Destination.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+        f.Gate.Contains(_search, StringComparison.OrdinalIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAsync();
-        _poller = new System.Threading.Timer(async _ =>
-        {
-            try { await InvokeAsync(LoadAsync); }
-            catch { /* swallow during teardown */ }
-        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
-    }
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            var flights = await Flights.GetAllAsync();
-            _flights = flights.ToList();
-            StateHasChanged();
-        }
-        catch
-        {
-            // backend warming up — try again on the next tick
-        }
-    }
+    protected override void OnInitialized() => Live.Changed += OnLiveChanged;
+    private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task SeedAsync()
     {
         _seeding = true;
+        _actionError = null;
         try
         {
             await Flights.SeedAsync();
-            await LoadAsync();
+            await Live.RefreshAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            _actionError = $"Could not seed flights: {ex.Message}";
         }
         finally
         {
@@ -136,31 +124,28 @@
         }
     }
 
-    private static string StatusClass(FlightStatus s) => s switch
+    private static string StatusClass(FlightStatus status) => status switch
     {
-        FlightStatus.Scheduled                  => "status-scheduled",
-        FlightStatus.WaitingForGate             => "status-waitgate",
-        FlightStatus.BoardingPushback           => "status-boarding",
-        FlightStatus.AwaitingTakeoffClearance   => "status-cleared",
-        FlightStatus.Departed                   => "status-departed",
-        FlightStatus.Cruising                   => "status-cruising",
-        FlightStatus.AwaitingLandingClearance   => "status-landing",
-        FlightStatus.Landed                     => "status-landed",
-        FlightStatus.Cancelled                  => "status-cancelled",
-        _ => "status-scheduled",
+        FlightStatus.Scheduled => "status-scheduled",
+        FlightStatus.WaitingForGate => "status-waitgate",
+        FlightStatus.BoardingPushback => "status-boarding",
+        FlightStatus.AwaitingTakeoffClearance => "status-cleared",
+        FlightStatus.Departed => "status-departed",
+        FlightStatus.Cruising => "status-cruising",
+        FlightStatus.AwaitingLandingClearance => "status-landing",
+        FlightStatus.Landed => "status-landed",
+        FlightStatus.Cancelled => "status-cancelled",
+        _ => "status-scheduled"
     };
 
-    private static string StatusLabel(FlightStatus s) => s switch
+    private static string StatusLabel(FlightStatus status) => status switch
     {
-        FlightStatus.WaitingForGate             => "WAIT GATE",
-        FlightStatus.BoardingPushback           => "BOARDING",
-        FlightStatus.AwaitingTakeoffClearance   => "AWAIT T/O",
-        FlightStatus.AwaitingLandingClearance   => "AWAIT LDG",
-        _ => s.ToString().ToUpperInvariant(),
+        FlightStatus.WaitingForGate => "WAITING FOR GATE",
+        FlightStatus.BoardingPushback => "BOARDING",
+        FlightStatus.AwaitingTakeoffClearance => "AWAITING TAKEOFF",
+        FlightStatus.AwaitingLandingClearance => "AWAITING LANDING",
+        _ => status.ToString().ToUpperInvariant()
     };
 
-    private static string RowClass(FlightStatus s) =>
-        s is FlightStatus.Landed or FlightStatus.Cancelled ? "muted-row" : "";
-
-    public void Dispose() => _poller?.Dispose();
+    public void Dispose() => Live.Changed -= OnLiveChanged;
 }

@@ -1,5 +1,6 @@
 @page "/weather"
 @inject WeatherApi Wx
+@inject AirportLiveState Live
 @implements IDisposable
 
 <PageTitle>Weather</PageTitle>
@@ -34,11 +35,20 @@
     </div>
 </div>
 
+@if (Live.WeatherError is not null)
+{
+    <div class="feed-warning" role="status">@Live.WeatherError</div>
+}
+@if (_lastError is not null)
+{
+    <div class="feed-warning" role="alert">@_lastError</div>
+}
+
 <BbCard>
     <BbCardHeader>
         <BbCardTitle>Override the next snapshot</BbCardTitle>
         <BbCardDescription>
-            Pick a preset to pin the published weather; ATC will see this on the next publish tick.
+            Pin a preset and publish it immediately. The 3D atmosphere follows the weather snapshot.
             @if (_status?.OverrideActive == true)
             {
                 <span> Currently overriding with <strong>@(_status.PresetName ?? "custom")</strong>.</span>
@@ -50,7 +60,7 @@
             @foreach (var preset in _presets)
             {
                 var isActive = _status?.PresetName == preset.Id;
-                <BbButton Variant="@(isActive ? ButtonVariant.Default : ButtonVariant.Outline)"
+                <BbButton @key="(preset.Id, isActive)" Variant="@(isActive ? ButtonVariant.Default : ButtonVariant.Outline)"
                           OnClick="@(() => ApplyPresetAsync(preset.Id))"
                           Disabled="@_busy">
                     <LucideIcon Name="@preset.Icon" Size="14" /> @preset.Label
@@ -160,10 +170,10 @@ else
 }
 
 @code {
-    private WeatherSnapshot? _snapshot;
-    private WeatherStatus? _status;
-    private System.Threading.Timer? _poller;
+    private WeatherSnapshot? _snapshot => Live.Weather?.Current;
+    private WeatherStatus? _status => Live.Weather;
     private bool _busy;
+    private string? _lastError;
 
     private readonly Preset[] _presets =
     {
@@ -175,25 +185,9 @@ else
         new("snow",          "Snow",          "snowflake"),
     };
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAsync();
-        _poller = new System.Threading.Timer(async _ =>
-        {
-            try { await InvokeAsync(LoadAsync); } catch { }
-        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
-    }
-
-    private async Task LoadAsync()
-    {
-        try
-        {
-            _status = await Wx.GetStatusAsync();
-            _snapshot = _status?.Current;
-            StateHasChanged();
-        }
-        catch { /* retry next tick */ }
-    }
+    protected override void OnInitialized() => Live.Changed += OnLiveChanged;
+    private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
+    private Task LoadAsync() => Live.RefreshAsync();
 
     private async Task PauseAsync()        => await RunAsync(() => Wx.PauseAsync());
     private async Task ResumeAsync()       => await RunAsync(() => Wx.ResumeAsync());
@@ -203,12 +197,16 @@ else
     private async Task RunAsync(Func<Task> action)
     {
         _busy = true;
+        _lastError = null;
         try { await action(); await LoadAsync(); }
-        catch { /* swallow for demo */ }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            _lastError = $"Weather command failed: {ex.Message}";
+        }
         finally { _busy = false; }
     }
 
-    public void Dispose() => _poller?.Dispose();
+    public void Dispose() => Live.Changed -= OnLiveChanged;
 
     private sealed record Preset(string Id, string Label, string Icon);
 }

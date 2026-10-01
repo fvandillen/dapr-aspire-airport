@@ -1,27 +1,19 @@
-﻿<div class="app-brand">
-    <LucideIcon Name="plane-takeoff" Size="20" />
-    <span><span class="app-brand-iata">AMS</span> Ops</span>
-</div>
+﻿<a class="app-brand" href="/" aria-label="AMS Airport, departure board">
+    <span class="brand-symbol"><LucideIcon Name="plane-takeoff" Size="22" /></span>
+    <span><span class="app-brand-iata">AMS</span><span class="brand-subtitle">AIRPORT / LIVE WORLD</span></span>
+</a>
 
-<nav class="app-nav">
+<nav class="app-nav" aria-label="Airport operations">
     <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-        <LucideIcon Name="layout-dashboard" Size="16" /> Departures
+        <LucideIcon Name="radar" Size="16" /> <span>Traffic</span>
     </NavLink>
     <NavLink class="nav-link" href="weather">
-        <LucideIcon Name="cloud-sun" Size="16" /> Weather
+        <LucideIcon Name="cloud-sun" Size="16" /> <span>Weather</span>
     </NavLink>
     <NavLink class="nav-link" href="atc">
-        <LucideIcon Name="radio" Size="16" /> ATC Tower
+        <LucideIcon Name="radio" Size="16" /> <span>ATC Tower</span>
     </NavLink>
     <NavLink class="nav-link" href="operations">
-        <LucideIcon Name="plane" Size="16" /> Operations
+        <LucideIcon Name="plus" Size="16" /> <span>Schedule</span>
     </NavLink>
 </nav>
-
-<div class="app-sidebar-footer">
-    <BbDarkModeToggle Variant="ButtonVariant.Ghost"
-                      Size="ButtonSize.Small"
-                      ShowLabel="true"
-                      LightLabel="Light mode"
-                      DarkLabel="Dark mode" />
-</div>

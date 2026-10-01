@@ -1,0 +1,16 @@
+{
+  "name": "airport-scene",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node Scene/build.mjs",
+    "test": "node --test Scene/*.test.js"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

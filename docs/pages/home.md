@@ -1,21 +1,24 @@
-# `/` — Departure board
+# `/` — Live traffic + 3D airport
 
 **File:** [src/Airport.Web/Pages/Home.razor](../../src/Airport.Web/Pages/Home.razor)
 
-Live flight board. Polls FlightOperations every 3 s and renders one row per flight.
+Live traffic panel over the persistent 3D airport. Uses the shared 2 s snapshot and renders an accessible flight card per flight. Aircraft placement illustrates workflow state, not geographic telemetry.
 
 ## What the user can do
 
 | Action | UI element | Calls |
 | --- | --- | --- |
-| See all flights + status counts (total / in the air / cancelled) | Auto-loaded table + metric cards | `GET /flights` |
+| See all flights + status counts (total / active / landed / airborne / cancelled) | Flight cards, summary strip, 3D aircraft | `GET /flights` |
 | Refresh immediately | **Refresh** button | `GET /flights` |
 | Seed 4 random demo flights | **Seed sample flights** button | `POST /flights/seed` |
-| Open a flight's detail page | Click a row | navigates to `/flight/{flightId}` |
+| Open a flight's controls and follow it in 3D | Flight card, aircraft, or aircraft label | navigates to `/flight/{flightId}` |
+| Filter flights by callsign, destination, or gate | Search box | local filtering; scene still shows all flights |
+| Schedule an individual flight | **New flight** | navigates to `/operations` |
+| Explore viewpoints, lighting, quality, motion, and labels | Shared scene toolbar | local visual controls; see [workspace controls](../README.md#immersive-workspace-all-routes) |
 
 ## Backend interactions
 
-All requests go to the **FlightOperations** service (`http://localhost:5083`) via the typed `FlightsApi` HTTP client ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)).
+Flight requests go to **FlightOperations** (`http://localhost:5083`) via the typed `FlightsApi` HTTP client ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)). The shared workspace also reads `GET /weather/status`, `GET /clearances`, and `GET /atc/weather` for its scene and summary strip; see the [shared feed table](../README.md#immersive-workspace-all-routes).
 
 - `GET /flights` — fans out to each Aircraft actor and returns a `FlightView[]` (active flights first, then landed/cancelled by scheduled time).
 - `POST /flights/seed` — generates 4 flights via `FlightFaker` and starts a workflow per flight.
@@ -28,6 +31,6 @@ All requests go to the **FlightOperations** service (`http://localhost:5083`) vi
 
 ## UI state
 
-- `_flights: List<FlightView>` — last snapshot from the board endpoint.
-- `_poller` — 3 s timer; swallowed errors keep the UI alive while backends warm up.
-- Status colors / labels come from local `StatusClass` / `StatusLabel` helpers; landed + cancelled rows get the `muted-row` class so they fade.
+- `AirportLiveState` retains the last successful snapshots and surfaces connection failures; the board distinguishes connecting, empty, filtered-empty, and stale states.
+- Search is local; seeding errors appear in the panel. Seeding never happens automatically.
+- Landed and cancelled cards are visually subdued but remain selectable. The scene does not advance workflow state; the backend remains authoritative.

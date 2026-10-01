@@ -2,7 +2,7 @@
 
 **File:** [src/Airport.Web/Pages/Atc.razor](../../src/Airport.Web/Pages/Atc.razor)
 
-Read-only view of the **AtcService**'s current state. Confirms that the pub/sub round trip works end-to-end.
+Read-only panel over the persistent 3D airport, showing **AtcService** state and active runway highlights. Confirms that the pub/sub round trip works end-to-end.
 
 ## What the user can do
 
@@ -11,17 +11,21 @@ Read-only view of the **AtcService**'s current state. Confirms that the pub/sub 
 | See active runway clearances | Auto-loaded table (polls every 2 s) | `GET /clearances` |
 | See the last weather snapshot ATC received | Card at the bottom | `GET /atc/weather` |
 | Refresh now | **Refresh** button | both endpoints above |
+| Follow a cleared flight | Callsign link or aircraft selection | navigates to `/flight/{flightId}` |
+| View runways or tower in 3D | Runway / Tower camera presets | local camera only; [workspace controls](../README.md#immersive-workspace-all-routes) |
 
 Each clearance row shows callsign, kind (Takeoff/Landing badge), runway, granted-at, and expires-at. Rows disappear automatically when `ExpiresAt` (15 s after granting) passes — the server filters them.
 
 ## Backend interactions
 
-All calls go to **AtcService** (`http://localhost:5082`) via `AtcApi` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)).
+Tower calls go to **AtcService** (`http://localhost:5082`) via `AtcApi` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)). Shared polling also reads `GET /flights` and `GET /weather/status` to drive aircraft and weather; see the [shared feed table](../README.md#immersive-workspace-all-routes).
 
 | Endpoint | Server behavior |
 | --- | --- |
 | `GET /clearances` | Reads `statestore` key `active-clearances` (a `Dictionary<flightId, ActiveClearance>`), drops expired entries, sorts by `GrantedAt`. |
 | `GET /atc/weather` | Returns the in-memory last `WeatherSnapshot` from the `WeatherWatch` singleton. |
+
+The UI filters expired entries as well. Stale/unavailable feeds are identified explicitly; an unavailable tower is not presented as an all-clear runway. The scene uses two illustrative physical runway strips (`09L`/`27R` and `09R`/`27L`); backend clearance records remain authoritative.
 
 ## Where the data comes from
 
@@ -37,7 +41,7 @@ flowchart LR
 
 Subscriber handlers in [services/Airport.AtcService/Program.cs](../../src/services/Airport.AtcService/Program.cs):
 
-- `POST /atc/weather-updates` → updates `WeatherWatch.Latest` (subscribes to `weather-updates`).
+- `POST /atc/weather-updates` → updates `WeatherWatch.Latest` only for a newer `ObservedAt` (subscribes to `weather-updates`). Duplicate/out-of-order delivery cannot revert the tower to older conditions.
 - `POST /atc/clearance-requests` → makes a decision, persists it in `active-clearances`, publishes the result on `clearance-results` (subscribes to `clearance-requests`).
 
 ## Decision logic
@@ -52,6 +56,8 @@ In `POST /atc/clearance-requests`:
 
 - **Pub/sub** — two subscriptions (`weather-updates`, `clearance-requests`) and one publish (`clearance-results`).
 - **State store** — `active-clearances` map (read by this page, written by the request handler).
+
+FlightOperations independently consumes `weather-updates` to wake its weather holds. ATC still receives and evaluates its own subscription; no WeatherService HTTP invocation is needed.
 
 ## Telemetry
 

@@ -35,7 +35,11 @@ const string ActiveClearancesKey = "active-clearances";
 app.MapPost("/atc/weather-updates",
     (WeatherSnapshot snapshot, WeatherWatch watch, ILogger<Program> logger) =>
 {
-    watch.Latest = snapshot;
+    if (!watch.Observe(snapshot))
+    {
+        logger.LogDebug("Ignoring duplicate or older weather snapshot from {ObservedAt}", snapshot.ObservedAt);
+        return Results.Ok();
+    }
     logger.LogDebug("Weather observed: {Condition} flyable={Flyable}",
         snapshot.Condition, snapshot.IsFlyable);
     return Results.Ok();
@@ -183,5 +187,22 @@ public sealed class RunwayBoard
 /// <summary>Singleton holding the last weather snapshot ATC saw via pub/sub.</summary>
 public sealed class WeatherWatch
 {
-    public WeatherSnapshot? Latest { get; set; }
+    private readonly Lock _gate = new();
+    private WeatherSnapshot? _latest;
+
+    public WeatherSnapshot? Latest
+    {
+        get { lock (_gate) return _latest; }
+    }
+
+    public bool Observe(WeatherSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            if (_latest is not null && _latest.ObservedAt >= snapshot.ObservedAt)
+                return false;
+            _latest = snapshot;
+            return true;
+        }
+    }
 }

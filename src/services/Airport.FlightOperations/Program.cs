@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Airport.Contracts;
 using Airport.FlightOperations.Aircraft;
+using Airport.FlightOperations.Weather;
 using Airport.FlightOperations.Workflows;
 using Airport.FlightOperations.Workflows.Activities;
 using Dapr;
@@ -14,6 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.Services.AddOpenApi();
 builder.Services.AddDaprClient();
+builder.Services.AddSingleton<WeatherSnapshotStore>();
+builder.Services.AddTransient<WeatherUpdatesHandler>();
 
 // Dapr actors: Aircraft (one per flight, state persisted in the actor state store).
 // Dapr Actor remoting defaults to DataContractSerializer (XML), which can't serialize
@@ -57,6 +60,14 @@ if (app.Environment.IsDevelopment())
 app.UseCloudEvents();
 app.MapSubscribeHandler();
 app.MapActorsHandlers();
+
+app.MapPost("/flight-ops/weather-updates", async (
+    WeatherSnapshot snapshot, WeatherUpdatesHandler handler, CancellationToken cancellationToken) =>
+{
+    await handler.HandleAsync(snapshot, cancellationToken);
+    return Results.Ok();
+})
+.WithTopic(DaprTopics.PubSubName, DaprTopics.WeatherUpdates);
 
 // --- Pub/sub subscriber: clearance results -> raise workflow event ---------
 app.MapPost("/flight-ops/clearance-results", async (

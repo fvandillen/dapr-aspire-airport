@@ -3,8 +3,8 @@ title: 5 — Building blocks in the demo app
 version: 3
 description: >-
   Walk through the Dapr building blocks exercised by the airport demo: pub/sub
-  weather updates, state-managed active clearances, service-to-service
-  invocation from the workflow, plus the bonus workflows + actors slide.
+  weather updates, state-managed active clearances, event-driven workflow
+  weather holds, plus the bonus workflows + actors slide.
 timer: 12
 scenes:
 
@@ -18,11 +18,11 @@ scenes:
         path: .demo/slides/dapr-aspire-session.md
         slide: 16
       - action: open
-        path: src/services/Airport.WeatherService/Program.cs
+        path: src/services/Airport.WeatherService/WeatherEventPublisher.cs
       - action: highlight
-        path: src/services/Airport.WeatherService/Program.cs
-        startPlaceholder: static async Task PublishCurrent(DaprClient dapr, WeatherState state)
-        endPlaceholder: "// Best-effort: the periodic loop will retry."
+        path: src/services/Airport.WeatherService/WeatherEventPublisher.cs
+        startPlaceholder: public async Task PublishAsync(WeatherSnapshot snapshot, bool overrideActive, CancellationToken cancellationToken)
+        endPlaceholder: await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.WeatherUpdates, snapshot, cancellationToken);
       - action: open
         path: src/services/Airport.AtcService/Program.cs
       - action: highlight
@@ -46,21 +46,27 @@ scenes:
         startPlaceholder: var map = await dapr.GetStateAsync<Dictionary<string, ActiveClearance>>(
         endPlaceholder: await dapr.SaveStateAsync(DaprTopics.StateStoreName, ActiveClearancesKey, map);
 
-  - id: invocation-demo
-    title: Service invocation — workflow calls weather
+  - id: weather-events-demo
+    title: Weather events — wake a waiting workflow
     description: >-
-      Slide, then highlight CheckWeatherActivity using
-      DaprClient.CreateInvokeHttpClient to talk to the weather sidecar by app id.
+      Slide, then highlight the subscriber notifying weather holds and
+      CheckWeatherActivity reading the durable latest snapshot.
     moves:
       - action: openSlide
         path: .demo/slides/dapr-aspire-session.md
         slide: 18
       - action: open
+        path: src/services/Airport.FlightOperations/Weather/WeatherUpdatesHandler.cs
+      - action: highlight
+        path: src/services/Airport.FlightOperations/Weather/WeatherUpdatesHandler.cs
+        startPlaceholder: var state = await workflows.GetWorkflowStateAsync(flightId,
+        endPlaceholder: true, cancellationToken);
+      - action: open
         path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
       - action: highlight
         path: src/services/Airport.FlightOperations/Workflows/Activities/FlightActivities.cs
-        startPlaceholder: "// Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar."
-        endPlaceholder: '?? throw new InvalidOperationException("WeatherService returned no snapshot");'
+        startPlaceholder: var snapshot = await snapshots.GetLatestAsync();
+        endPlaceholder: 'span?.SetTag("weather.wind_kt", snapshot.WindKnots);'
 
   - id: workflows-bonus
     title: Bonus — Dapr Workflows + Actors

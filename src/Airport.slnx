@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/shared/">
     <Project Path="Airport.ServiceDefaults/Airport.ServiceDefaults.csproj" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
     <Project Path="Airport.Contracts/Airport.Contracts.csproj" />
   </Folder>
   <Folder Name="/services/">

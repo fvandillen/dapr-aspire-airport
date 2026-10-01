@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Net.Http.Json;
 using Airport.Contracts;
 using Airport.FlightOperations.Aircraft;
+using Airport.FlightOperations.Weather;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Dapr.Client;
@@ -90,11 +90,11 @@ public sealed class RequestClearanceActivity(DaprClient dapr, ILogger<RequestCle
 /// signature clash with the base <c>WorkflowActivity.RunAsync(object?)</c> overload).</summary>
 public sealed record CheckWeatherInput;
 
-/// <summary>Calls the WeatherService via Dapr service invocation. Demos the invoke building block.</summary>
-public sealed class CheckWeatherActivity(ILogger<CheckWeatherActivity> logger)
-    : WorkflowActivity<CheckWeatherInput, WeatherSnapshot>
+/// <summary>Reads the latest weather received through pub/sub, or null before the first event.</summary>
+public sealed class CheckWeatherActivity(WeatherSnapshotStore snapshots, ILogger<CheckWeatherActivity> logger)
+    : WorkflowActivity<CheckWeatherInput, WeatherSnapshot?>
 {
-    public override async Task<WeatherSnapshot> RunAsync(WorkflowActivityContext context, CheckWeatherInput _)
+    public override async Task<WeatherSnapshot?> RunAsync(WorkflowActivityContext context, CheckWeatherInput _)
     {
         using var span = AirportTelemetry.Source.StartActivity(
             "workflow.activity.check_weather",
@@ -106,16 +106,19 @@ public sealed class CheckWeatherActivity(ILogger<CheckWeatherActivity> logger)
             span.SetTag("flight.id", context.InstanceId);
         }
 
-        // Modern (non-obsolete) service invocation: a routed HttpClient pointed at the sidecar.
-        using var client = DaprClient.CreateInvokeHttpClient(appId: "weather-service");
-        var snapshot = await client.GetFromJsonAsync<WeatherSnapshot>("/weather")
-            ?? throw new InvalidOperationException("WeatherService returned no snapshot");
+        var snapshot = await snapshots.GetLatestAsync();
+        span?.SetTag("weather.available", snapshot is not null);
+        if (snapshot is null)
+        {
+            logger.LogInformation("Flight {FlightId} is waiting for the first weather event", context.InstanceId);
+            return null;
+        }
 
         span?.SetTag("weather.condition", snapshot.Condition);
         span?.SetTag("weather.flyable", snapshot.IsFlyable);
         span?.SetTag("weather.wind_kt", snapshot.WindKnots);
 
-        logger.LogInformation("Weather check: {Condition}, flyable={Flyable}",
+        logger.LogInformation("Published weather check: {Condition}, flyable={Flyable}",
             snapshot.Condition, snapshot.IsFlyable);
         return snapshot;
     }

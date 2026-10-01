@@ -1,5 +1,6 @@
 @page "/operations"
 @inject FlightsApi Flights
+@inject AirportLiveState Live
 
 <PageTitle>Operations</PageTitle>
 
@@ -70,7 +71,7 @@
             <ol style="padding-left:1rem; margin:0; line-height:1.7;">
                 <li><strong>FlightOperations</strong> POSTs to its own minimal API and starts a <code>FlightWorkflow</code>.</li>
                 <li>The workflow initializes the <strong>Aircraft actor</strong> (state persists in the Dapr state store).</li>
-                <li>It calls the <strong>WeatherService</strong> via Dapr service invocation.</li>
+                <li>It reads the latest <code>weather-updates</code> event. If weather is missing or below minima, a new event wakes the waiting workflow.</li>
                 <li>Publishes a <code>clearance-requests</code> event via Dapr pub/sub.</li>
                 <li><strong>ATC</strong> subscribes, decides, persists the clearance, publishes <code>clearance-results</code>.</li>
                 <li>FlightOperations subscribes and raises an external event on the workflow.</li>
@@ -93,6 +94,9 @@
                     @_lastScheduled.Callsign · @_lastScheduled.Origin → @_lastScheduled.Destination ·
                     @_lastScheduled.AircraftType · gate @_lastScheduled.Gate
                 </div>
+                <a class="workspace-button" style="margin-top:1rem;" href="@($"/flight/{Uri.EscapeDataString(_lastScheduled.FlightId)}")">
+                    <LucideIcon Name="crosshair" Size="14" /> Follow aircraft
+                </a>
             </BbCardContent>
         </BbCard>
     </div>
@@ -133,10 +137,11 @@
                 _callsign, _origin, _destination, _aircraft, _gate,
                 _scheduledDeparture));
             _lastScheduled = view;
+            await Live.RefreshAsync();
             // Pre-fill with a fresh random flight so back-to-back clicks aren't identical.
             Randomize();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {
             _lastError = ex.Message;
         }

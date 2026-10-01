@@ -19,5 +19,6 @@ string ServiceUrl(string name, string fallback) =>
 builder.Services.AddHttpClient<WeatherApi>(c => c.BaseAddress = new Uri(ServiceUrl("Weather", "http://localhost:5081")));
 builder.Services.AddHttpClient<AtcApi>(c => c.BaseAddress = new Uri(ServiceUrl("Atc", "http://localhost:5082")));
 builder.Services.AddHttpClient<FlightsApi>(c => c.BaseAddress = new Uri(ServiceUrl("FlightOps", "http://localhost:5083")));
+builder.Services.AddScoped<AirportLiveState>();
 
 await builder.Build().RunAsync();

@@ -15,7 +15,7 @@ public static class DaprTopics
     /// <summary>Name of the Dapr distributed-lock component (matches <c>dapr/components/lockstore.yaml</c>).</summary>
     public const string LockStoreName = "lockstore";
 
-    /// <summary>Weather snapshots published periodically by the WeatherService.</summary>
+    /// <summary>Weather changes and periodic snapshots published to ATC and FlightOperations.</summary>
     public const string WeatherUpdates = "weather-updates";
 
     /// <summary>Clearance requests sent from FlightOperations to ATC.</summary>

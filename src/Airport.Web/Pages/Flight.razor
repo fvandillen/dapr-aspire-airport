@@ -1,6 +1,7 @@
 @page "/flight/{FlightId}"
 @inject FlightsApi Flights
 @inject NavigationManager Nav
+@inject AirportLiveState Live
 @implements IDisposable
 
 <PageTitle>Flight @(_flight?.Callsign ?? FlightId)</PageTitle>
@@ -32,12 +33,32 @@
     </div>
 </div>
 
+@if (_lastError is not null)
+{
+    <div class="feed-warning" role="alert">@_lastError</div>
+}
+@if (_loadError is not null)
+{
+    <div class="feed-warning" role="status">@_loadError</div>
+}
+@if (Live.FlightsError is not null)
+{
+    <div class="feed-warning" role="status">@Live.FlightsError</div>
+}
+
 @if (_flight is null)
 {
     <BbCard>
         <BbCardContent>
             <div style="display:flex; align-items:center; gap:0.5rem;" class="muted">
-                <BbSpinner /> Loading flight...
+                @if (_loadError is null)
+                {
+                    <BbSpinner /> <span>Loading flight...</span>
+                }
+                else
+                {
+                    <span>No flight snapshot available. Use Refresh to try again.</span>
+                }
             </div>
         </BbCardContent>
     </BbCard>
@@ -186,9 +207,11 @@ else
     [Parameter] public string FlightId { get; set; } = "";
 
     private FlightView? _flight;
-    private System.Threading.Timer? _poller;
+    private readonly CancellationTokenSource _lifetime = new();
+    private string? _loadedId;
     private bool _busy;
     private string? _lastError;
+    private string? _loadError;
 
     private readonly Step[] _steps =
     {
@@ -202,50 +225,80 @@ else
         new("Landed",               "Touched down on the runway. Flight complete.",       "plane-landing"),
     };
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAsync();
-        _poller = new System.Threading.Timer(async _ =>
-        {
-            try { await InvokeAsync(LoadAsync); } catch { }
-        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
-    }
+    protected override void OnInitialized() => Live.Changed += OnLiveChanged;
 
     protected override async Task OnParametersSetAsync()
     {
-        // Reload when the user navigates between flights without leaving the page.
-        if (_flight is not null && _flight.FlightId != FlightId)
+        if (_loadedId != FlightId)
         {
+            _loadedId = FlightId;
             _flight = null;
+            _lastError = null;
             await LoadAsync();
         }
     }
 
-    private async Task LoadAsync()
+    private void OnLiveChanged()
     {
-        try
+        if (Live.FlightsLive && Live.Flights.FirstOrDefault(f => f.FlightId == FlightId) is { } flight)
         {
-            _flight = await Flights.GetAsync(FlightId);
-            StateHasChanged();
+            _flight = flight;
+            _loadError = null;
         }
-        catch { /* retry next tick */ }
+        _ = InvokeAsync(StateHasChanged);
     }
 
-    private async Task AdvanceAsync()              => await RunAsync(() => Flights.AdvanceAsync(FlightId));
-    private async Task CancelAsync()               => await RunAsync(() => Flights.CancelAsync(FlightId));
+    private async Task LoadAsync()
+    {
+        if (_lifetime.IsCancellationRequested) return;
+        var flightId = FlightId;
+        try
+        {
+            var flight = await Flights.GetAsync(flightId, _lifetime.Token);
+            if (!_lifetime.IsCancellationRequested && flightId == FlightId)
+            {
+                _flight = flight;
+                _loadError = flight is null ? "No flight was returned by flight operations." : null;
+            }
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            // Navigation disposed this panel.
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            if (flightId == FlightId)
+                _loadError = $"Could not load flight: {ex.Message}";
+        }
+    }
+
+    private async Task AdvanceAsync()              => await RunAsync(() => Flights.AdvanceAsync(FlightId, _lifetime.Token));
+    private async Task CancelAsync()               => await RunAsync(() => Flights.CancelAsync(FlightId, _lifetime.Token));
     private async Task ForceClearance(ClearanceKind kind, bool granted) =>
-        await RunAsync(() => Flights.ForceClearanceAsync(FlightId, kind, granted));
+        await RunAsync(() => Flights.ForceClearanceAsync(FlightId, kind, granted, ct: _lifetime.Token));
 
     private async Task RunAsync(Func<Task> action)
     {
         _busy = true;
         _lastError = null;
-        try { await action(); await LoadAsync(); }
-        catch (Exception ex) { _lastError = ex.Message; }
+        try { await action(); await LoadAsync(); await Live.RefreshAsync(); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            // The operator navigated away while the request was in flight.
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            _lastError = $"Flight command failed: {ex.Message}";
+        }
         finally { _busy = false; }
     }
 
-    public void Dispose() => _poller?.Dispose();
+    public void Dispose()
+    {
+        Live.Changed -= OnLiveChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
 
     // --- mapping helpers ---
 

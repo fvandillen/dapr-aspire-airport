@@ -12,7 +12,7 @@ The talk is split into six [Demo Time](https://demotime.show) acts (one YAML per
 | 2 | [02-dapr.yaml](02-dapr.yaml) | 3 | What Dapr is, the sidecar pattern, building blocks & components |
 | 3 | [03-aspire.yaml](03-aspire.yaml) | 5 | Aspire, AppHost, ServiceDefaults, integrations, Aspire + Dapr together |
 | 4 | [04-observability.yaml](04-observability.yaml) | 3 | Why it matters, OTel in Aspire, custom metrics with `Meter` |
-| 5 | [05-building-blocks.yaml](05-building-blocks.yaml) | 4 | Pub/Sub, state, service invocation, bonus workflows + actors |
+| 5 | [05-building-blocks.yaml](05-building-blocks.yaml) | 4 | Pub/Sub, state, event-driven weather, bonus workflows + actors |
 | 6 | [06-recap.yaml](06-recap.yaml) | 1 | Recap and Q&A |
 
 - [slides/dapr-aspire-session.md](slides/dapr-aspire-session.md) — single 20-slide deck shared by all acts (each scene references it by slide number).
@@ -37,9 +37,9 @@ Start at act **1 — Intro**, scene 1 (**Title**) and advance one scene at a tim
 | 3 — Aspire | aspire-service-defaults | `Airport.ServiceDefaults/Extensions.cs` — OTel block |
 | 3 — Aspire | aspire-dapr-together | `Airport.AppHost/AppHost.cs` — `SidecarFor` + service wiring |
 | 4 — Observability | custom-metrics | `Airport.Contracts/AirportTelemetry.cs` — clearance counter + histogram |
-| 5 — Building blocks | pubsub-demo | `Airport.WeatherService/Program.cs` (publisher) + `Airport.AtcService/Program.cs` (subscriber) |
+| 5 — Building blocks | pubsub-demo | `Airport.WeatherService/WeatherEventPublisher.cs` + `Airport.AtcService/Program.cs` (subscriber) |
 | 5 — Building blocks | state-demo | `Airport.AtcService/Program.cs` — `Get/SaveStateAsync` block |
-| 5 — Building blocks | invocation-demo | `FlightActivities.cs` — `CheckWeatherActivity` invoke block |
+| 5 — Building blocks | weather-events-demo | `WeatherUpdatesHandler.cs` notification + `FlightActivities.cs` durable weather read |
 | 5 — Building blocks | workflows-bonus | `FlightWorkflow.cs` takeoff section + `AircraftActor.UpdateStatusAsync` |
 
 Highlights are anchored to unique text snippets (`startPlaceholder` / `endPlaceholder`) so they don't drift through unrelated code edits. If you rename or restructure a highlighted block, update the matching placeholder in the relevant act file. To check that every placeholder across every act still resolves to exactly one occurrence:
