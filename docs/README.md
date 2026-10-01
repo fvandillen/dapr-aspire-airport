@@ -7,7 +7,7 @@ The Blazor WASM frontend (`Airport.Web`) calls three backend services; each back
 
 | Component | Port | Dapr app id | Role |
 | --- | --- | --- | --- |
-| `Airport.Web` (Blazor WASM) | 5080 | — | Persistent 3D airport + operational panels, calls services over HTTP (no sidecar — browsers can't reach one) |
+| `Airport.Web` (Blazor WASM) | 5080 | — | Persistent 3D airport + operational panels, HTTP commands/snapshots + SignalR change notifications (no sidecar — browsers can't reach one) |
 | `Airport.WeatherService` | 5081 | `weather-service` | Publishes weather snapshots, exposes control HTTP API |
 | `Airport.AtcService` | 5082 | `atc-service` | Subscribes to clearance requests, decides, persists active clearances |
 | `Airport.FlightOperations` | 5083 | `flight-ops` | Hosts flight workflows + Aircraft actors, consumes weather events, owns the flights HTTP API |
@@ -42,11 +42,11 @@ The workspace keeps operational controls, live metrics, and camera hints visible
 | Follow a flight and operate its workflow | Aircraft or aircraft-label click | Opens `/flight/{id}` and follows that aircraft |
 | Change lighting | Golden hour / Daylight / Night lights | Visual only; does not change backend time or weather |
 | Reduce GPU work | High fidelity / Balanced | Local rendering quality |
-| Freeze animation / show aircraft labels | Motion / labels buttons | Visual only; live data polling continues |
+| Freeze animation / show aircraft labels | Motion / labels buttons | Visual only; SignalR live updates continue |
 | Explore without a panel | Explore airport / Show controls | Hides / restores the operational panel; navigation restores it |
 | Recover after a graphics failure | Retry 3D view | Recreates the renderer without restarting backend workflows |
 
-`AirportLiveState` shares snapshots between the scene, summary strip, and panels. It refreshes the following endpoints concurrently every 2 s (without overlapping refresh batches, with an 8 s request timeout):
+`AirportLiveState` shares snapshots between the scene, summary strip, and panels. It connects directly to each backend's SignalR hub at `/hubs/airport` using WebSockets only (no negotiation or long-polling fallback). After connecting, it reads an initial snapshot. Each service sends a `Changed` notification after a mutation, refreshing only that service's endpoints below; **idle clients make no recurring snapshot requests**. Reads have an 8 s timeout, never overlap within a service, and changes received during a read queue another snapshot.
 
 | Service | Endpoint | Visualization |
 | --- | --- | --- |
@@ -54,6 +54,10 @@ The workspace keeps operational controls, live metrics, and camera hints visible
 | WeatherService | `GET /weather/status` | Weather-driven atmosphere, precipitation, visibility, surface appearance; publisher status |
 | AtcService | `GET /clearances` | Active runway clearance highlights; expired clearances are removed locally as well |
 | AtcService | `GET /atc/weather` | Last subscriber-observed weather on the tower panel |
+
+Flight notifications cover scheduling, actor initialization/status transitions, cancellation and state removal/reset. Actor state is committed before notifying. Weather notifications cover publisher ticks and pause/resume/preset/override changes. ATC notifications cover newer observed weather, granted clearances and reset. Duplicate/out-of-order weather deliveries and repeated pause commands do not trigger refreshes.
+
+Initial connection failures and disconnects retry automatically. Reconnecting reads a fresh snapshot to recover missed changes; disconnected feeds retain their last data but are marked stale. Failed snapshot reads retain data and recover on the next change or the page's **Refresh** button. Manual refresh reads only that page's service. Clearance expiry uses a local one-shot timer to update panels and runway highlights without backend requests. Deployments must support WebSocket upgrades on the configured service URLs.
 
 Failures are surfaced as stale/unavailable data rather than an empty successful response. Last snapshots are retained; unknown clearance data is not displayed as a free runway. Shared reads touch the same actors and state keys as the traffic and tower pages; the scene does not advance workflows or mutate backend state.
 
@@ -104,9 +108,13 @@ To start with an empty airport, use **Clear airport state** on Operations and co
 
 ## Cross-cutting
 
-- **Observability**: every service uses `Airport.ServiceDefaults` (OpenTelemetry traces + metrics) and registers `AirportTelemetry.Source` / `AirportTelemetry.Meter`. The AppHost generates a Dapr tracing config so sidecar spans land in the Aspire dashboard alongside app spans. See [src/Airport.Contracts/AirportTelemetry.cs](../src/Airport.Contracts/AirportTelemetry.cs).
+- **Observability**: every service uses `Airport.ServiceDefaults` (OpenTelemetry traces + metrics) and registers `AirportTelemetry.Source` / `AirportTelemetry.Meter`. Health checks and SignalR transport requests are excluded from HTTP tracing; actual commands, change-driven snapshot reads, Dapr events and workflow activities remain traced. The weather publisher still emits real periodic snapshots every 60 s. The AppHost generates a Dapr tracing config so sidecar spans land in the Aspire dashboard alongside app spans. See [src/Airport.Contracts/AirportTelemetry.cs](../src/Airport.Contracts/AirportTelemetry.cs).
 - **Trace correlation**: `FlightTrace.ContextFor(flightId)` derives a deterministic trace id from the flight id, so every span produced for one flight (across services + workflow activities) joins the same trace.
 - **Run locally**: `aspire run` from `src/Airport.AppHost`. Requires `dapr init` to have provisioned Redis on `localhost:6379`.
+
+## SignalR regression scenarios
+
+Run `dotnet run --project src/tests/Airport.Realtime.Tests` from the repository root. Uses the actual UI feed implementation and isolated local ASP.NET Core hubs, with no Docker, Dapr, Redis or extra test packages. Covers zero idle HTTP reads, service-scoped changes, notifications during snapshot reads, stale data, local clearance expiry, manual refresh, disconnect/reconnect catch-up, reset, initial connection retries and transport trace filtering.
 
 ## Weather workflow integration scenarios
 

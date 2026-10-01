@@ -1,6 +1,5 @@
 @page "/operations"
 @inject FlightsApi Flights
-@inject AirportLiveState Live
 
 <PageTitle>Operations</PageTitle>
 
@@ -174,7 +173,6 @@
                 _callsign, _origin, _destination, _aircraft, _gate,
                 _scheduledDeparture));
             _lastScheduled = view;
-            await Live.RefreshAsync();
             // Pre-fill with a fresh random flight so back-to-back clicks aren't identical.
             Randomize();
         }
@@ -208,9 +206,6 @@
             _lastError = null;
             _confirmReset = false;
             _resetMessage = "Airport state cleared. You can schedule a fresh flight.";
-            // An in-flight poll may have started before reset; finish it, then read fresh data.
-            await Live.RefreshAsync();
-            await Live.RefreshAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {

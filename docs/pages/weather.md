@@ -8,7 +8,7 @@ Panel over the persistent airport that shows and controls current weather. Scene
 
 | Action | UI element | Calls |
 | --- | --- | --- |
-| See current condition / temperature / wind / visibility / cloud base / flyable badge | Auto-loaded cards and 3D weather (shared refresh every 2 s) | `GET /weather/status` |
+| See current condition / temperature / wind / visibility / cloud base / flyable badge | Auto-loaded cards and 3D weather (SignalR changes) | `GET /weather/status` on connection/reconnect/change |
 | Pause the periodic publisher (ATC and FlightOperations retain their last received snapshots) | **Pause publishing** | `POST /weather/pause` |
 | Resume publishing | **Resume publishing** | `POST /weather/resume` |
 | Pin the weather to a preset (CAVOK, light rain, gusty winds, fog, thunderstorms, snow) | Preset buttons | `POST /weather/preset/{name}` |
@@ -20,11 +20,12 @@ The active preset button is highlighted (Default variant) while every other pres
 
 ## Backend interactions
 
-Weather calls go to **WeatherService** (`http://localhost:5081`) via `WeatherApi` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)). The workspace also reads `GET /flights`, `GET /clearances`, and `GET /atc/weather`; see the [shared feed table](../README.md#immersive-workspace-all-routes). Failed reads or commands are shown in the panel, and successful commands refresh the scene's snapshot.
+Weather calls go to **WeatherService** (`http://localhost:5081`) via `WeatherApi` ([Services/ApiClients.cs](../../src/Airport.Web/Services/ApiClients.cs)). The workspace also reads `GET /flights`, `GET /clearances`, and `GET /atc/weather`; see the [shared feed table](../README.md#immersive-workspace-all-routes). Failed reads or commands are shown in the panel. Weather state changes notify the scene and all clients, including changes made outside this page.
 
 | Endpoint | Server behavior |
 | --- | --- |
 | `GET /weather/status` | Returns `WeatherStatus(Current, Paused, OverrideActive, PresetName, PublishIntervalSeconds)`. |
+| SignalR `/hubs/airport` | Sends `Changed` after publisher ticks and pause/resume/preset/override mutations, even when the periodic publisher is paused. Only the weather snapshot is refreshed; no idle polling. |
 | `POST /weather/pause` | Sets `WeatherState.Paused = true`; the background publisher then skips ticks. |
 | `POST /weather/resume` | Unpauses and **immediately publishes** so subscribers don't keep seeing stale data. |
 | `POST /weather/preset/{name}` | Looks up a preset from `WeatherPresets`, pins it as the override, publishes immediately. 404 if unknown. |

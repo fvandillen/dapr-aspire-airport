@@ -91,6 +91,6 @@
 
     protected override void OnInitialized() => Live.Changed += OnLiveChanged;
     private void OnLiveChanged() => _ = InvokeAsync(StateHasChanged);
-    private Task LoadAsync() => Live.RefreshAsync();
+    private Task LoadAsync() => Live.RefreshTowerAsync();
     public void Dispose() => Live.Changed -= OnLiveChanged;
 }

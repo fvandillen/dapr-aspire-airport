@@ -16,6 +16,9 @@
   <Folder Name="/frontend/">
     <Project Path="Airport.Web/Airport.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Airport.Realtime.Tests/Airport.Realtime.Tests.csproj" />
+  </Folder>
   <Folder Name="/dapr/">
     <File Path="dapr/components/pubsub.yaml" />
     <File Path="dapr/components/statestore.yaml" />

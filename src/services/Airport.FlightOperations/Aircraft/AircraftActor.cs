@@ -1,3 +1,4 @@
+using Airport.ServiceDefaults;
 using Dapr.Actors.Runtime;
 
 namespace Airport.FlightOperations.Aircraft;
@@ -6,7 +7,7 @@ namespace Airport.FlightOperations.Aircraft;
 /// Aircraft actor implementation. State persists in the Dapr state store flagged with
 /// <c>actorStateStore: "true"</c> (see <c>dapr/components/statestore.yaml</c>).
 /// </summary>
-public sealed class AircraftActor(ActorHost host) : Actor(host), IAircraftActor
+public sealed class AircraftActor(ActorHost host, AirportUpdateNotifier updates) : Actor(host), IAircraftActor
 {
     private const string StateKey = "state";
 
@@ -24,6 +25,8 @@ public sealed class AircraftActor(ActorHost host) : Actor(host), IAircraftActor
             Status = Airport.Contracts.FlightStatus.Scheduled,
         };
         await StateManager.SetStateAsync(StateKey, state);
+        await StateManager.SaveStateAsync();
+        await updates.ChangedAsync();
         Logger.LogInformation("Aircraft {Callsign} ({FlightId}) initialized", data.Callsign, data.FlightId);
     }
 
@@ -45,7 +48,13 @@ public sealed class AircraftActor(ActorHost host) : Actor(host), IAircraftActor
             Note = update.Note ?? current.Value.Note,
         };
 
+        if (next == current.Value)
+            return;
+
         await StateManager.SetStateAsync(StateKey, next);
+        // A notification must never expose an uncommitted actor snapshot.
+        await StateManager.SaveStateAsync();
+        await updates.ChangedAsync();
         Logger.LogInformation("Aircraft {Callsign}: status -> {Status} (runway {Runway})",
             next.Callsign, next.Status, next.Runway ?? "-");
     }
@@ -59,6 +68,8 @@ public sealed class AircraftActor(ActorHost host) : Actor(host), IAircraftActor
     public async Task ClearStateAsync()
     {
         await StateManager.TryRemoveStateAsync(StateKey);
+        await StateManager.SaveStateAsync();
+        await updates.ChangedAsync();
         Logger.LogInformation("Cleared aircraft state for {FlightId}", Id);
     }
 }

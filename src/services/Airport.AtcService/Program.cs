@@ -1,4 +1,5 @@
 using Airport.Contracts;
+using Airport.ServiceDefaults;
 using System.Text.Json;
 using Dapr;
 using Dapr.Client;
@@ -36,7 +37,8 @@ const string LastResetKey = "last-airport-reset";
 
 // --- Pub/sub subscriber: weather updates -----------------------------------
 app.MapPost("/atc/weather-updates",
-    async (WeatherSnapshot snapshot, WeatherWatch watch, AtcStateGate gate, ILogger<Program> logger) =>
+    async (WeatherSnapshot snapshot, WeatherWatch watch, AtcStateGate gate,
+        AirportUpdateNotifier updates, ILogger<Program> logger) =>
 {
     using var lease = await gate.EnterAsync();
     if (!watch.Observe(snapshot))
@@ -46,6 +48,7 @@ app.MapPost("/atc/weather-updates",
     }
     logger.LogDebug("Weather observed: {Condition} flyable={Flyable}",
         snapshot.Condition, snapshot.IsFlyable);
+    await updates.ChangedAsync();
     return Results.Ok();
 })
 .WithTopic(DaprTopics.PubSubName, DaprTopics.WeatherUpdates);
@@ -57,6 +60,7 @@ app.MapPost("/atc/clearance-requests", async (
     RunwayBoard runways,
     WeatherWatch watch,
     AtcStateGate gate,
+    AirportUpdateNotifier updates,
     ILogger<Program> logger,
     CancellationToken cancellationToken) =>
 {
@@ -124,6 +128,7 @@ app.MapPost("/atc/clearance-requests", async (
                 ExpiresAt: DateTimeOffset.UtcNow.AddSeconds(15));
 
             await dapr.SaveStateAsync(DaprTopics.StateStoreName, ActiveClearancesKey, map);
+            await updates.ChangedAsync();
         }
     }
 
@@ -154,7 +159,7 @@ app.MapPost("/atc/clearance-requests", async (
 // --- Pub/sub subscriber: reset airport state and acknowledge completion ----
 app.MapPost("/atc/airport-reset", async (
     AirportResetRequest request, DaprClient dapr, RunwayBoard runways,
-    WeatherWatch watch, AtcStateGate gate, ILogger<Program> logger) =>
+    WeatherWatch watch, AtcStateGate gate, AirportUpdateNotifier updates, ILogger<Program> logger) =>
 {
     using var lease = await gate.EnterAsync();
     var lastReset = await dapr.GetStateAsync<AirportResetRequest>(DaprTopics.StateStoreName, LastResetKey);
@@ -168,6 +173,7 @@ app.MapPost("/atc/airport-reset", async (
         ]);
         runways.Clear();
         watch.Clear();
+        await updates.ChangedAsync();
         logger.LogInformation("Cleared tower state for airport reset {WorkflowId}", request.WorkflowId);
     }
     await dapr.PublishEventAsync(DaprTopics.PubSubName, DaprTopics.AirportResetCompleted,
@@ -192,7 +198,8 @@ app.MapGet("/clearances", async (DaprClient dapr) =>
     return Results.Ok(live);
 });
 
-app.MapGet("/atc/weather", (WeatherWatch watch) => Results.Ok(watch.Latest));
+app.MapGet("/atc/weather", (WeatherWatch watch) =>
+    watch.Latest is { } snapshot ? Results.Ok(snapshot) : Results.NoContent());
 
 app.Run();
 
